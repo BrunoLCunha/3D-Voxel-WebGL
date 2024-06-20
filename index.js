@@ -22,7 +22,26 @@ var gShader = {};
 var gmProjection;
 var gInterface = {};
 var gPlaying = true;
-var gKeyCode = { I: 73, K: 75, J: 74, L: 76, T: 84, X: 88, W: 87, A: 65, D: 68, Z: 90, C: 67, S: 83, ESC: 27 };
+var gKeyCode = {
+  I: 73,
+  K: 75,
+  J: 74,
+  L: 76,
+  T: 84,
+  X: 88,
+  W: 87,
+  A: 65,
+  D: 68,
+  Z: 90,
+  C: 67,
+  S: 83,
+  ESC: 27,
+  1: 49,
+  2: 50,
+  3: 51,
+  4: 52,
+  5: 53,
+};
 
 var gVertexShaderSrc;
 var gFragmentShaderSrc;
@@ -36,7 +55,7 @@ var gGreenMaterial = new Material(Color.Green, Color.DarkGrey, 1000);
 var gBlueMaterial = new Material(Color.Blue, Color.DarkGrey, 100);
 var gYellowMaterial = new Material(Color.Yellow, Color.DarkGrey, 1000);
 
-var gTextureConfig = { textureUnitIndex: 0 };
+var gBlockType = 0;
 
 const gChao = new Cube(vec3(0, 0, -10), vec3(0, 0, 0), vec3(1000, 1000, 20), vec3(0, 0, 0), vec3(0, 0, 0));
 const gBola = new Cube(vec3(0, 0, 90), vec3(0, 0, 0), vec3(30, 30, 30), vec3(0, 0, 0), vec3(0, 0, 0));
@@ -61,9 +80,15 @@ const gSphereYellow = new Sphere(
 
 const gLight = new Light(vec4(0, 0, 0, 0), Color.White, Color.White, Color.DarkGrey);
 const gCamera = new Camera(vec3(0, 0, 100), vec3(0, 1, 100));
+var gWorld;
 
 var gMouse = { sensibility: 0.1 };
-var world = new World(WORLD_SIZE, WORLD_HEIGHT);
+var gTextureConfig = {
+  diffuseTextureUnitIndex: 0,
+  diffuseTextureIndex: 0,
+  TEXTURE_BUFFER_SIZE: 1024,
+  TEXTURE_SIZE: 32,
+};
 
 /**
  * Ponto de entrada do codigo
@@ -76,6 +101,8 @@ function main() {
   gCanvas = document.getElementById("glcanvas");
   gCtx = gCanvas.getContext("webgl2");
   if (!gCtx) alert("WebgCtx 2.0 isn't available");
+  gShader.program = makeProgram(gCtx, gVertexShaderSrc, gFragmentShaderSrc);
+  gCtx.useProgram(gShader.program);
 
   start();
   render();
@@ -88,22 +115,22 @@ function main() {
  */
 function start() {
   console.log(`Unidades de textura disponíveis na GPU: ${gCtx.MAX_COMBINED_TEXTURE_IMAGE_UNITS}`);
-
-  initializeInterface();
-
   gCubeA.setMaterial(Material.defaultMaterial());
   gCubeB.setMaterial(Material.defaultMaterial());
 
   gObjects.push(gCubeA, gCubeB);
+
   buildWorld();
   buildShaders();
+  initializeInterface();
 }
 
 function buildWorld() {
+  gWorld = new World(WORLD_SIZE, WORLD_HEIGHT, gTextureConfig, gCtx);
   const halfWL = Math.ceil(WORLD_HEIGHT / 2);
 
-  world.buildGround(halfWL);
-  world.build();
+  gWorld.buildGround(halfWL);
+  gWorld.build();
 
   // worldVoxelMatrix[5][5][5] = 1;
   // worldVoxelMatrix[5][5][6] = 1;
@@ -160,11 +187,12 @@ function handleMouseDownEvent(e) {
     console.log(`Lançado raio de ${from} com direção ${direction} e tamanho ${length}`);
     const ray = new Ray(from, direction, length);
 
-    const newBlockIndex = world.getNewBlockIndexByRayCollision(ray, gCamera.pos);
+    console.log(gWorld);
+    const newBlockIndex = gWorld.getNewBlockIndexByRayCollision(ray, gCamera.pos);
 
     if (newBlockIndex?.length) {
       const [x, y, z] = newBlockIndex;
-      world.placeBlock(0, vec3(x, y, z));
+      gWorld.placeBlock(gBlockType, vec3(x, y, z));
       console.log(`Block can be place at ${x}, ${y}, ${z}`);
     }
   }
@@ -232,6 +260,26 @@ function handleKeyboardEvent(keyCode, down) {
       // console.log("D solto", JSON.stringify({ dir: gCamera.mDir }));
     }
   }
+
+  if (keyCode == gKeyCode["1"]) {
+    gBlockType = 0;
+    console.log("Bloco escolhido: Grama");
+  }
+
+  if (keyCode == gKeyCode["2"]) {
+    gBlockType = 1;
+    console.log("Bloco escolhido: Pedra");
+  }
+
+  if (keyCode == gKeyCode["3"]) {
+    gBlockType = 2;
+    console.log("Bloco escolhido: Madeira");
+  }
+
+  if (keyCode == gKeyCode["4"]) {
+    gBlockType = 3;
+    console.log("Bloco escolhido: Grama");
+  }
 }
 
 /**
@@ -256,9 +304,6 @@ function playOrPause() {
  * modelView e demais uniforms necessários para o modelo de iluminação de Phong
  */
 function buildShaders() {
-  gShader.program = makeProgram(gCtx, gVertexShaderSrc, gFragmentShaderSrc);
-  gCtx.useProgram(gShader.program);
-
   gShader.VAO = [];
 
   makeVAOs();
@@ -345,6 +390,7 @@ function makeVAO(i) {
     var bufTextures = gCtx.createBuffer();
     gCtx.bindBuffer(gCtx.ARRAY_BUFFER, bufTextures);
     gCtx.bufferData(gCtx.ARRAY_BUFFER, flatten(gObjects[i].textureMap), gCtx.STATIC_DRAW);
+    console.log(JSON.stringify({ textureCords: gObjects[i].textureMap }));
 
     var aTextureCoord = gCtx.getAttribLocation(gShader.program, "aTextureCoord");
     gCtx.vertexAttribPointer(aTextureCoord, 2, gCtx.FLOAT, false, 0, 0);

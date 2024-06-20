@@ -30,8 +30,9 @@ class GameObject {
     this.calculateNormals();
   }
 
-  setTexture(texture) {
-    this.texture = texture;
+  setTexture(diffuseIndex) {
+    this.diffuseIndex = diffuseIndex;
+    this.texture = true;
   }
 
   setTextureMap(textureMap) {
@@ -103,7 +104,7 @@ class GameObject {
     if (this.collider) {
       const collisionPoint = this.collider.testCollision(ray, playerPos);
 
-      if (collisionPoint) console.log(`Collision point ${collisionPoint}`);
+      // if (collisionPoint) console.log(`Collision point ${collisionPoint}`);
 
       return collisionPoint;
     }
@@ -137,9 +138,6 @@ class Cube extends GameObject {
       vec3(0.5, 0.5, -0.5),
       vec3(0.5, -0.5, -0.5),
     ];
-
-    var vT = [vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0)];
-
     // prettier-ignore
     var vertex = [
       v[1], v[0], v[3], // top
@@ -160,6 +158,8 @@ class Cube extends GameObject {
       v[5], v[4], v[0], // left
       v[0], v[1], v[5],
     ];
+
+    var vT = [vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0)];
 
     // prettier-ignore
     var textureCordsBase = [
@@ -235,7 +235,7 @@ class CubeCollider extends Collider {
       return;
     }
 
-    console.log("top collision", this._cube.index);
+    // console.log("top collision", this._cube.index);
 
     // return collisionFaces.reduce((nearestCollision, actualCollision) => {
     //   const lengthToPoint = length(subtract(actualCollision, playerPos));
@@ -265,8 +265,8 @@ class CubeCollider extends Collider {
     const alpha = dot(r0p0, face.normal) / dot(ray.direction, face.normal);
 
     const p0p = subtract(mult(alpha, ray.direction), subtract(add(this._cube.pos, face.p0), ray.from));
-    const projection1 = dot(p0p, face.s1) / length(face.s1) + 10;
-    const projection2 = dot(p0p, face.s2) / length(face.s2) + 10;
+    const projection1 = dot(p0p, face.s1) / length(face.s1) + this._cube.escala[0] / 2;
+    const projection2 = dot(p0p, face.s2) / length(face.s2) + this._cube.escala[1] / 2;
 
     if (projection1 > 0 && projection1 < this._cube.escala[0]) {
       if (projection2 > 0 && projection2 < this._cube.escala[1]) {
@@ -350,31 +350,42 @@ class FaceCollider {
   }
 }
 
-class Block {
-  static Grass(pos, theta, textureConfig, gCtx) {
-    const scale = vec3(50, 50, 50);
-    const cube = new Cube(pos, theta, scale, vec3(0, 0, 0), vec3(0, 0, 0));
+class BlockController {
+  constructor(textureConfig, gCtx) {
+    this.textures = [Texture.Grass(), Texture.Rock(), Texture.Wood()];
+
+    const diffuseTextureBuffer = new TextureBuffer(
+      textureConfig.TEXTURE_BUFFER_SIZE,
+      textureConfig.TEXTURE_SIZE,
+      textureConfig.diffuseTextureUnitIndex,
+      gCtx
+    );
+
+    // diffuseTextureBuffer.addTexture(this.textures[0]);
+    this.textures.forEach((texture) => diffuseTextureBuffer.addTexture(texture));
+    this.diffuseTextureBuffer = diffuseTextureBuffer;
+    this.textureBuffer = diffuseTextureBuffer;
+    this.cubeScale = vec3(50, 50, 50);
+  }
+
+  Grass(pos, theta) {
+    const cube = new Cube(pos, theta, this.cubeScale, vec3(0, 0, 0), vec3(0, 0, 0));
     cube.setMaterial(Material.defaultMaterial());
-    cube.setTexture(Texture.Grass(textureConfig.textureUnitIndex, gCtx));
-    textureConfig.textureUnitIndex++;
+    cube.setTexture(0);
     return cube;
   }
 
-  static Rock(pos, theta, gTextureConfig, gCtx) {
-    const scale = vec3(50, 50, 50);
-    const cube = new Cube(pos, theta, scale, vec3(0, 0, 0), vec3(0, 0, 0));
+  Rock(pos, theta) {
+    const cube = new Cube(pos, theta, this.cubeScale, vec3(0, 0, 0), vec3(0, 0, 0));
     cube.setMaterial(Material.defaultMaterial());
-    cube.setTexture(Texture.Rock(gTextureConfig.textureUnitIndex, gCtx));
-    gTextureConfig.textureUnitIndex++;
+    cube.setTexture(1);
     return cube;
   }
 
-  static Wood(pos, theta, gTextureConfig, gCtx) {
-    const scale = vec3(50, 50, 50);
-    const cube = new Cube(pos, theta, scale, vec3(0, 0, 0), vec3(0, 0, 0));
+  Wood(pos, theta) {
+    const cube = new Cube(pos, theta, this.cubeScale, vec3(0, 0, 0), vec3(0, 0, 0));
     cube.setMaterial(Material.defaultMaterial());
-    cube.setTexture(Texture.Wood(gTextureConfig.textureUnitIndex, gCtx));
-    gTextureConfig.textureUnitIndex++;
+    cube.setTexture(2);
     return cube;
   }
 }
@@ -551,6 +562,102 @@ class Camera {
   }
 }
 
+class TextureBuffer {
+  constructor(bufferSize, sizePerTexture, textureUnitIndex, gCtx) {
+    this.buffer = new Uint8Array(4 * bufferSize * bufferSize);
+    this.bufferSize = bufferSize;
+    this.textureUnitIndex = textureUnitIndex;
+    this.sizePerTexture = sizePerTexture;
+    this.textureIndex = 0;
+    this.texturePerBuffer = bufferSize / sizePerTexture;
+    this.gCtx = gCtx;
+  }
+
+  /**
+   * Adiciona textura ao buffer
+   * @param {Texture} texture - Textura a ser adicionada no buffer
+   */
+  addTexture(texture) {
+    const bufferSize = this.bufferSize;
+    const sizePerTexture = this.sizePerTexture;
+
+    const textureIndex = this.textureIndex;
+
+    // const [start, end] = this.getTextureMappingByIndex(this.textureIndex++);
+    const offset = textureIndex * sizePerTexture * 4;
+
+    console.log(textureIndex);
+
+    for (let s = 0; s < sizePerTexture * 4; s++) {
+      for (let t = 0; t < sizePerTexture * 4; t++) {
+        if (textureIndex == 1) {
+          console.log(
+            `Saving texture at buffer index: ${s * (textureIndex + 1) * sizePerTexture + t}, texture buffer: ${
+              s * sizePerTexture + t
+            }, s: ${s}, t: ${t}, textureIndex: ${textureIndex} with colour component: ${
+              texture.getTextureBytes()[s * sizePerTexture * 4 + t]
+            } and texture length: ${texture.getTextureBytes().length} offset: ${offset}`
+          );
+        }
+
+        this.buffer[s * bufferSize * 4 + t + textureIndex * sizePerTexture * 4] =
+          texture.getTextureBytes()[s * sizePerTexture * 4 + t];
+      }
+    }
+
+    this.textureIndex += 1;
+  }
+
+  /**
+   * @param {number} index - Retorna s e t da textura baseado no índice
+   * @returns {vec2[]}
+   */
+  getTextureMappingByIndex(index) {
+    if (index > this.textureIndex) {
+      console.warn("No texture with given index", index);
+      return [];
+    }
+
+    const bufferSize = this.bufferSize;
+    const sizePerTexture = this.sizePerTexture;
+    const offset = sizePerTexture / bufferSize;
+
+    const colUnclamped0 = index * offset;
+    const s = Math.floor(colUnclamped0) * offset;
+    const t = colUnclamped0 % 1;
+
+    console.log(s);
+
+    return [vec2(t, s), vec2(t + offset, s + offset)];
+  }
+
+  /**
+   * Associa o conjunto de texturas a uma unidade de textura na GPU
+   */
+  buildTexture() {
+    const textureUnitRef = `TEXTURE${this.textureUnitIndex}`;
+
+    const ctx = this.gCtx;
+    var ctxTexture = ctx.createTexture();
+    ctx.activeTexture(ctx[textureUnitRef]);
+    ctx.bindTexture(ctx.TEXTURE_2D, ctxTexture);
+    ctx.texImage2D(
+      ctx.TEXTURE_2D,
+      0,
+      ctx.RGBA,
+      this.bufferSize,
+      this.bufferSize,
+      0,
+      ctx.RGBA,
+      ctx.UNSIGNED_BYTE,
+      this.buffer
+    );
+    ctx.generateMipmap(ctx.TEXTURE_2D);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.NEAREST);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.NEAREST);
+  }
+}
+
 class Texture {
   constructor(nRow, nCol, size, pattern) {
     this.N_ROWS = nRow;
@@ -659,60 +766,24 @@ class Texture {
     return this.texture;
   }
 
-  registerTexture(textureUnitRef) {
-    this.textureUnitRef = textureUnitRef;
-  }
-
-  /**
-   * Associa textura a uma unidade de textura na GPU
-   * @param {Texture} texture - Textura a ser carregada
-   */
-  configureTexture(textureUnitIndex, ctx) {
-    const textureUnitRef = `TEXTURE${textureUnitIndex}`;
-    // console.log(textureUnitRef);
-
-    var ctxTexture = ctx.createTexture();
-    ctx.activeTexture(ctx[textureUnitRef]);
-    ctx.bindTexture(ctx.TEXTURE_2D, ctxTexture);
-    ctx.texImage2D(
-      ctx.TEXTURE_2D,
-      0,
-      ctx.RGBA,
-      this.TEX_SIZE,
-      this.TEX_SIZE,
-      0,
-      ctx.RGBA,
-      ctx.UNSIGNED_BYTE,
-      this.getTextureBytes()
-    );
-    ctx.generateMipmap(ctx.TEXTURE_2D);
-    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.NEAREST);
-    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.NEAREST);
-
-    this.registerTexture(textureUnitIndex);
-  }
-
-  static Grass(textureUnitIndex, ctx) {
+  static Grass() {
     const texture = new Texture(32, 32, 32, "GRASS");
-    texture.configureTexture(textureUnitIndex, ctx);
     return texture;
   }
 
-  static Rock(textureUnitIndex, ctx) {
+  static Rock() {
     const texture = new Texture(32, 32, 32, "ROCK");
-    texture.configureTexture(textureUnitIndex, ctx);
     return texture;
   }
 
-  static Wood(textureUnitIndex, ctx) {
+  static Wood() {
     const texture = new Texture(32, 32, 32, "WOOD");
-    texture.configureTexture(textureUnitIndex, ctx);
     return texture;
   }
 }
 
 class World {
-  constructor(worldSize, worldHeight) {
+  constructor(worldSize, worldHeight, textureConfig, gCtx) {
     this.worldSize = worldSize;
     this.worldHeight = worldHeight;
     this.worldVoxelMatrix = [];
@@ -731,7 +802,13 @@ class World {
       }
     }
 
-    this.blockByIndex = [Block.Grass, Block.Rock, Block.Wood];
+    const blockController = new BlockController(textureConfig, gCtx);
+    this.blockController = blockController;
+    this.blockByIndex = [
+      (pos, theta) => blockController.Grass(pos, theta),
+      (pos, theta) => blockController.Rock(pos, theta),
+      (pos, theta) => blockController.Wood(pos, theta),
+    ];
   }
 
   getBlockTypeByIndex(x, y, z) {
@@ -773,50 +850,50 @@ class World {
   }
 
   placeBlock(blockType, index) {
-    const halfWL = Math.floor(this.worldSize / 2);
-    const halfWH = Math.floor(this.worldHeight / 2);
-    
+    const halfWL = Math.ceil(this.worldSize / 2);
+    const halfWH = Math.ceil(this.worldHeight / 2);
+
     const blockToPlace = this.blockByIndex[blockType];
 
     if (blockToPlace) {
       const [x, y, z] = index;
 
-      const block = blockToPlace(
-        vec3((x - halfWL) * 50, (y - halfWL) * 50, (z - halfWH) * 50),
-        vec3(0, 0, 0),
-        gTextureConfig,
-        gCtx
-      );
+      const block = blockToPlace(vec3((x - halfWL) * 50, (y - halfWL) * 50, (z - halfWH) * 50), vec3(0, 0, 0));
 
       this.setBlockByIndex(x, y, z, block);
       block.setIndexInWorldVolume(x, y, z);
+
+      console.log(block.diffuseIndex);
+
+      const [start, end] = this.blockController.diffuseTextureBuffer.getTextureMappingByIndex(block.diffuseIndex);
+
+      // var vT = [vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0)];
+      var vT = [vec2(start[0], start[1]), vec2(end[0], start[1]), vec2(end[0], end[1]), vec2(start[0], end[1])];
+
+      // prettier-ignore
+      var textureCordsBase = [
+        vT[0], vT[1], vT[2], 
+        vT[2], vT[3], vT[0],
+      ];
+
+      var textureCords = [].concat(...Array(6).fill(textureCordsBase));
+      // console.log(JSON.stringify({ textureCords }));
+
+      console.log(JSON.stringify({ start: start, end: end }));
+
+      block.setTextureMap(textureCords);
       gObjects.push(block);
     }
   }
 
   build() {
-    const halfWL = Math.ceil(this.worldSize / 2);
-    const halfWH = Math.ceil(this.worldHeight / 2);
-
     for (let x = 0; x < this.worldVoxelMatrix.length; x++) {
       for (let y = 0; y < this.worldVoxelMatrix[x].length; y++) {
         for (let z = 0; z < this.worldVoxelMatrix[x][y].length; z++) {
-          const blockToPlace = this.getBlockTypeByIndex(x, y, z);
-
-          if (blockToPlace) {
-            const block = blockToPlace(
-              vec3((x - halfWL) * 50, (y - halfWL) * 50, (z - halfWH) * 50),
-              vec3(0, 0, 0),
-              gTextureConfig,
-              gCtx
-            );
-
-            this.setBlockByIndex(x, y, z, block);
-            block.setIndexInWorldVolume(x, y, z);
-            gObjects.push(block);
-          }
+          this.placeBlock(this.worldVoxelMatrix[x][y][z], [x, y, z]);
         }
       }
     }
+    this.blockController.textureBuffer.buildTexture();
   }
 }
