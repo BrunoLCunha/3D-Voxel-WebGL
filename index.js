@@ -12,11 +12,13 @@ window.onload = main;
 const BACKGROUND_COLOR = [0, 0, 1, 1];
 const STEP_DELTA_TIME = 0.1;
 const PLAYER_SPEED = 300;
-const PLAYER_HEIGHT = 100;
+const PLAYER_HEIGHT = 75;
+const PLAYER_JUMP_VELOCITY = 250;
 const WORLD_SIZE = 20;
 const WORLD_HEIGHT = 10;
 const RAY_SIZE = 100;
 const G = 9.8 * 50;
+const HALF_CUBE_SIZE = 25;
 
 var gCtx;
 var gCanvas;
@@ -43,6 +45,7 @@ var gKeyCode = {
   3: 51,
   4: 52,
   5: 53,
+  Space: 32,
 };
 
 var gVertexShaderSrc;
@@ -68,6 +71,11 @@ const gSphereB = new Sphere(vec3(-100, -100, 30), vec3(0, 0, 0), vec3(30, 30, 30
 const gCubeAim = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(0.5, 0.5, 0.5), vec3(0, 0, 0), vec3(0, 0, 0));
 const gCubeB = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(50, 50, 50), vec3(0, 0, 0), vec3(0, 0, 0));
 
+const gCubeVertexa = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
+const gCubeVertexb = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
+const gCubeVertexc = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
+const gCubeVertexd = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
+
 const gRedCube = new Cube(vec3(0, 0, 0), vec3(0, 90, 90), vec3(5, 2, 400), vec3(0, 0, -360 / 60), vec3(0, 0, 0));
 const gRedCube2 = new Cube(vec3(0, 0, 0), vec3(0, 90, 90), vec3(10, 5, 400), vec3(0, 0, -0.1), vec3(0, 0, 0));
 
@@ -81,8 +89,12 @@ const gSphereYellow = new Sphere(
 );
 
 const gLight = new Light(vec4(0, 0, 0, 0), Color.White, Color.White, Color.DarkGrey);
-const gCamera = new Camera(vec3(0, 0, PLAYER_HEIGHT), vec3(0, 1, PLAYER_HEIGHT));
-var gPlayerFallingVelocity = 0;
+const gCamera = new Camera(vec3(-50, -50, PLAYER_HEIGHT + HALF_CUBE_SIZE), vec3(-50, -49, PLAYER_HEIGHT + HALF_CUBE_SIZE));
+
+var gPlayerVerticalVelocity = 0;
+var gPlayerOnGround = false;
+var gPlayerJumping = false;
+
 var gWorld;
 
 var gMouse = { sensibility: 0.1 };
@@ -120,7 +132,12 @@ function start() {
   console.log(`Unidades de textura disponíveis na GPU: ${gCtx.MAX_COMBINED_TEXTURE_IMAGE_UNITS}`);
   gCubeB.setMaterial(Material.defaultMaterial());
 
-  gObjects.push(gCubeB);
+  gCubeVertexa.setMaterial(Material.red());
+  gCubeVertexb.setMaterial(Material.green());
+  gCubeVertexc.setMaterial(Material.blue());
+  gCubeVertexd.setMaterial(Material.yellow());
+
+  gObjects.push(gCubeB, gCubeVertexa, gCubeVertexb, gCubeVertexc, gCubeVertexd);
 
   buildAim();
   buildWorld();
@@ -160,8 +177,8 @@ function initializeInterface() {
 
   gInterface.jogarPausar.onclick = playOrPause;
 
-  window.onkeydown = (e) => handleKeyboardEvent(e.keyCode, true);
-  window.onkeyup = (e) => handleKeyboardEvent(e.keyCode, false);
+  window.onkeydown = (e) => handleKeyboardEvent(e, true);
+  window.onkeyup = (e) => handleKeyboardEvent(e, false);
 
   window.onmousemove = (e) => handleMouseMovementEvent(e);
   window.onmousedown = (e) => handleMouseDownEvent(e);
@@ -204,7 +221,6 @@ function handleMouseDownEvent(e) {
     console.log(`Lançado raio de ${from} com direção ${direction} e tamanho ${length}`);
     const ray = new Ray(from, direction, length);
 
-    console.log(gWorld);
     const newBlockIndex = gWorld.getNewBlockIndexByRayCollision(ray, gCamera.pos);
 
     if (newBlockIndex?.length) {
@@ -223,7 +239,9 @@ function handleMouseDownEvent(e) {
  * A - Andar para a esquerda
  * D - Andar para a direita
  */
-function handleKeyboardEvent(keyCode, down) {
+function handleKeyboardEvent(e, down) {
+  const { keyCode } = e;
+
   if (keyCode == gKeyCode["ESC"]) {
     document.exitPointerLock();
   }
@@ -251,6 +269,11 @@ function handleKeyboardEvent(keyCode, down) {
       gCamera.mDir[0] = 1;
 
       // console.log("D pressionado; Andando para direita", JSON.stringify({ dir: gCamera.mDir }));
+    }
+
+    if (keyCode == gKeyCode["Space"]) {
+      handlePlayerJump();
+      e.preventDefault();
     }
   } else {
     if (keyCode == gKeyCode["W"]) {
@@ -527,7 +550,7 @@ function update(forcar, deltaTime) {
   }
 
   handleCollision(deltaTime);
-  handlePlayerJump(deltaTime);
+  handlePlayerGravity(deltaTime);
 }
 
 function handleCollision(deltaTime) {
@@ -537,11 +560,17 @@ function handleCollision(deltaTime) {
     let pitch = rotateZ(gCamera.theta[0]);
     let movementRotated = mult(pitch, movement);
 
+    let unnormalizedMovementDirRotated = mult(pitch, gCamera.mDir);
     const rayFrom = subtract(gCamera.pos, new vec3(0, 0, PLAYER_HEIGHT / 2));
-    const rayDirection = normalize(vec3(movementRotated[0], movementRotated[1], movementRotated[2]));
+    const rayDirection = vec3(
+      unnormalizedMovementDirRotated[0],
+      unnormalizedMovementDirRotated[1],
+      unnormalizedMovementDirRotated[2]
+    );
 
-    if (gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, 20))) {
-      console.log("Collision detected");
+    const collisionCube = gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, 5));
+    if (collisionCube) {
+      console.log("COLIISION");
       return;
     }
 
@@ -549,21 +578,32 @@ function handleCollision(deltaTime) {
   }
 }
 
-function handlePlayerJump(deltaTime) {
-  let onGround = false;
+function handlePlayerGravity(deltaTime) {
+  gCamera.pos = add(gCamera.pos, mult(deltaTime, vec3(0, 0, gPlayerVerticalVelocity)));
 
   const rayFrom = gCamera.pos;
   const rayDirection = normalize(vec3(0, 0, -1));
 
-  if (gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, PLAYER_HEIGHT))) {
-    onGround = true;
-    gPlayerFallingVelocity = 0;
+  const collisionCube = gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, PLAYER_HEIGHT));
+  if (collisionCube) {
+    gCamera.pos = vec3(gCamera.pos[0], gCamera.pos[1], collisionCube.pos[2] + PLAYER_HEIGHT + HALF_CUBE_SIZE);
+    gPlayerOnGround = true;
+    gPlayerJumping = false;
+    gPlayerVerticalVelocity = 0;
+  } else {
+    gPlayerOnGround = false;
   }
 
-  if (!onGround) {
-    gPlayerFallingVelocity += deltaTime * G;
-    gCamera.pos = subtract(gCamera.pos, mult(deltaTime, vec3(0, 0, gPlayerFallingVelocity)));
+  if (!gPlayerOnGround) {
+    gPlayerVerticalVelocity -= deltaTime * G;
   }
+}
+
+function handlePlayerJump() {
+  if (gPlayerJumping) return;
+
+  gPlayerJumping = true;
+  gPlayerVerticalVelocity = PLAYER_JUMP_VELOCITY;
 }
 
 /* ==================================================================

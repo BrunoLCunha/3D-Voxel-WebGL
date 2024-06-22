@@ -95,20 +95,6 @@ class GameObject {
   get collider() {
     return this._collider;
   }
-
-  /**
-   * @param {Ray} ray - Raio disparado
-   * @returns {string} - Face colidida mais próxima (se houver colisão)
-   */
-  testFaceCollision(ray, playerPos) {
-    if (this.collider) {
-      const collisionPoint = this.collider.testRayCollision(ray, playerPos);
-
-      // if (collisionPoint) console.log(`Collision point ${collisionPoint}`);
-
-      return collisionPoint;
-    }
-  }
 }
 
 /* ==================================================================
@@ -173,21 +159,23 @@ class Cube extends GameObject {
     super.setMesh(vertex);
     super.setTextureMap(textureCords);
 
-    const faceColliderTop = new FaceCollider(vertex.slice(0, 6));
-    const faceColliderRight = new FaceCollider(vertex.slice(6, 12));
-    const faceColliderFront = new FaceCollider(vertex.slice(12, 18));
-    const faceColliderBack = new FaceCollider(vertex.slice(18, 24));
-    const faceColliderBottom = new FaceCollider(vertex.slice(24, 30));
-    const faceColliderLeft = new FaceCollider(vertex.slice(30, 36));
+    const faceColliderTop = new QuadCollider([v[0], v[1], v[3]], this.escala[0], this.pos);
+    const faceColliderBottom = new QuadCollider([v[5], v[4], v[6]], this.escala[0], this.pos);
+
+    const faceColliderRight = new QuadCollider([v[3], v[2], v[7]], this.escala[0], this.pos);
+    const faceColliderLeft = new QuadCollider([v[4], v[5], v[0]], this.escala[0], this.pos);
+
+    const faceColliderFront = new QuadCollider([v[0], v[3], v[4]], this.escala[0], this.pos);
+    const faceColliderBack = new QuadCollider([v[5], v[6], v[1]], this.escala[0], this.pos);
 
     const cubeCollider = new CubeCollider(
+      this,
       faceColliderTop,
+      faceColliderBottom,
       faceColliderRight,
+      faceColliderLeft,
       faceColliderFront,
       faceColliderBack,
-      faceColliderBottom,
-      faceColliderLeft,
-      this
     );
 
     super.collider = cubeCollider;
@@ -202,90 +190,148 @@ class Collider {}
 
 class CubeCollider extends Collider {
   /**
-   * @param {FaceCollider} top - Define a face de cima do cubo
-   * @param {FaceCollider} right - Define a face da direita do cubo
-   * @param {FaceCollider} front - Define a face da frente do cubo
-   * @param {FaceCollider} back - Define a face de trás do cubo
-   * @param {FaceCollider} bottom - Define a face de baixo do cubo
-   * @param {FaceCollider} left - Define a face da esquerda do cubo
+   * @param {QuadCollider} top - Define a face de cima do cubo
+   * @param {QuadCollider} bottom - Define a face de baixo do cubo
+   * @param {QuadCollider} right - Define a face da direita do cubo
+   * @param {QuadCollider} left - Define a face da esquerda do cubo
+   * @param {QuadCollider} front - Define a face da frente do cubo
+   * @param {QuadCollider} back - Define a face de trás do cubo
    * @param {Cube} cube - Cubo contendo suas transformações
    * @returns {CubeCollider}
    */
-  constructor(top, right, front, back, bottom, left, cube) {
+  constructor(cube, top, bottom, right, left, front, back) {
     super();
+    this._cube = cube;
+
     this._top = top;
+    this._bottom = bottom;
+
     this._right = right;
+    this._left = left;
+
     this._front = front;
     this._back = back;
-    this._bottom = bottom;
-    this._left = left;
-    this._cube = cube;
   }
 
   /**
    * @param {Ray} ray - Raio disparado
-   * @returns {string} - Face atingida
+   * @param {vec3} playerPos - Posição do jogador
+   * @returns {number[]} - Índice do novo bloco de acordo com a face atingida mais próxima
    */
-  testRayCollision(ray, playerPos) {
-    const topCollisionPoint = this.testRayFaceCollision(ray, this._top);
+  getNewBlockIndexByRayCollider(ray, playerPos) {
+    const topCollisionPoint = this.getRayCollisionPoint(ray, this._top);
+    const bottomCollisionPoint = this.getRayCollisionPoint(ray, this._bottom);
 
-    const collisionFaces = [topCollisionPoint].filter((point) => !!point);
+    const rightCollisionPoint = this.getRayCollisionPoint(ray, this._right);
+    const leftCollisionPoint = this.getRayCollisionPoint(ray, this._left);
 
-    if (!collisionFaces.length) {
-      return;
-    }
+    const frontCollisionPoint = this.getRayCollisionPoint(ray, this._front);
+    const backCollisionPoint = this.getRayCollisionPoint(ray, this._back);
+
+    const collisionFaces = [
+      topCollisionPoint,
+      bottomCollisionPoint,
+
+      rightCollisionPoint,
+      leftCollisionPoint,
+
+      frontCollisionPoint,
+      backCollisionPoint,
+    ];
+
+    const mapNewCubeIndexByFaceCollided = [
+      [this._cube.index.x, this._cube.index.y, this._cube.index.z + 1], // top
+      [this._cube.index.x, this._cube.index.y, this._cube.index.z - 1], // bottom
+
+      [this._cube.index.x + 1, this._cube.index.y, this._cube.index.z], // right
+      [this._cube.index.x - 1, this._cube.index.y, this._cube.index.z], // left
+
+      [this._cube.index.x, this._cube.index.y - 1, this._cube.index.z], // front
+      [this._cube.index.x, this._cube.index.y + 1, this._cube.index.z], // back
+    ];
 
     // console.log("top collision", this._cube.index);
 
-    // return collisionFaces.reduce((nearestCollision, actualCollision) => {
-    //   const lengthToPoint = length(subtract(actualCollision, playerPos));
-    //   const nearestLength = length(nearestCollision);
+    let nearestFaceIndex = 0;
 
-    //   if (lengthToPoint < nearestLength) {
-    //     return actualCollision;
-    //   }
+    const nearestCollidedFace = collisionFaces.reduce((nearestCollidedFace, actualCollidedFace, index) => {
+      if (!nearestCollidedFace) {
+        nearestFaceIndex = index;
+        return actualCollidedFace;
+      }
 
-    //   return nearestCollision;
-    // }, collisionFaces[0]);
+      if (!actualCollidedFace) return nearestCollidedFace;
 
-    return [this._cube.index.x, this._cube.index.y, this._cube.index.z + 1];
+      const actualNearestFaceLength = length(subtract(nearestCollidedFace, playerPos));
+      const actualCollidedFaceLength = length(subtract(actualCollidedFace, playerPos));
+
+      if (actualCollidedFaceLength < actualNearestFaceLength) {
+        nearestFaceIndex = index;
+        return actualCollidedFace;
+      }
+
+      return nearestCollidedFace;
+    }, collisionFaces[0]);
+
+    if (!!nearestCollidedFace) {
+      console.log(
+        `Colisão com face de indices: ${mapNewCubeIndexByFaceCollided[nearestFaceIndex]} e índice ${nearestFaceIndex}`
+      );
+      return mapNewCubeIndexByFaceCollided[nearestFaceIndex];
+    }
+
+    // return [this._cube.index.x, this._cube.index.y, this._cube.index.z + 1];
+
+    // return [this._cube.index.x, this._cube.index.y, this._cube.index.z + 1];
   }
 
   /**
    * @param {Ray} ray - Raio disparado
-   * @param {FaceCollider} face - Face testada
+   * @param {QuadCollider} face - Face testada
    * @returns {vec3} - Ponto da colisão
    */
-  testRayFaceCollision(ray, face) {
-    const isFacingNormal = dot(ray.direction, face.normal) < 0;
+  getRayCollisionPoint(ray, face) {
+    const isFacingNormal = dot(ray.direction, face.normal) > 0;
     if (!isFacingNormal) return;
 
     const n = face.normal;
     const d = ray.direction;
 
-    const p0 = add(this._cube.pos, mult(this._cube.escala[0], face.p0));
+    const p0 = face.p0;
     const r0 = ray.from;
     const r0p0 = subtract(p0, r0);
 
-    const alpha = dot(r0p0, n) / dot(n, d);
+    const n_d = dot(n, d);
+
+    if (n_d === 0) {
+      return;
+    }
+
+    const alpha = dot(r0p0, n) / n_d;
 
     if (alpha <= 0 || alpha > ray.length) return;
 
-    const alphaXd = mult(alpha, d);
-    const p0r0 = subtract(p0, r0);
+    // const p0r0 = subtract(p0, r0);
 
-    const p0p = subtract(alphaXd, p0r0);
-    const projection1 = dot(p0p, mult(this._cube.escala[0], face.s1)) / (this._cube.escala[0] * length(face.s1));
-    const projection2 = dot(p0p, mult(this._cube.escala[1], face.s2)) / (this._cube.escala[1] * length(face.s2));
-
-    if (projection1 > 0 && projection1 < this._cube.escala[0]) {
-      if (projection2 > -this._cube.escala[0] / 2 && projection2 < this._cube.escala[1] / 2) {
-        const p = add(r0, alphaXd);
-        console.log(`Collided with face in point ${p}`);
-        gCubeB.pos = p0;
-        return p;
-      }
+    if (face.isPointInFace(new Ray(r0, d, alpha))) {
+      const alpha_d = mult(alpha, d);
+      const p = add(r0, alpha_d);
+      // gCubeB.pos = p;
+      return p;
     }
+
+    // const p0p = subtract(alpha_d, p0r0);
+
+    // const projection1 = dot(p0p, mult(this._cube.escala[0], face.s1)) / (this._cube.escala[0] * length(face.s1));
+    // const projection2 = dot(p0p, mult(this._cube.escala[1], face.s2)) / (this._cube.escala[1] * length(face.s2));
+
+    // if (projection1 > 0 && projection1 < this._cube.escala[0]) {
+    //   if (projection2 > -this._cube.escala[0] / 2 && projection2 < this._cube.escala[1] / 2) {
+    //     // console.log(`Collided with face in point ${p}`);
+    //     gCubeB.pos = p0;
+    //     return p;
+    //   }
+    // }
 
     // const n = face.normal;
     // const d = ray.direction;
@@ -315,7 +361,7 @@ class CubeCollider extends Collider {
           this._cube.pos[2] + this._cube.escala[2] / 2 > rayPoint[2] &&
           this._cube.pos[2] - this._cube.escala[2] / 2 < rayPoint[2]
         ) {
-          return true;
+          return this._cube;
         }
       }
     }
@@ -348,33 +394,51 @@ class Ray {
   }
 }
 
-class FaceCollider {
+class QuadCollider {
   /**
-   * @param {vec3[]} vertexes - Array dos 4 vértices da face em ordem-anti-horária
-   * @returns {FaceCollider}
+   * @param {vec3[]} vertexes - Array dos 3 vértices da face em ordem-horária
+   * @param {number} sizeLength - Tamanho da face (apenas considerando faces equiláteras)
+   * @param {vec3} cubePos - Posição do cubo no mundo
+   * @returns {QuadCollider}
    */
-  constructor(vertexes) {
+  constructor(vertexes, sizeLength, cubePos) {
     this.vertexes = vertexes;
+    this.sizeLength = sizeLength;
+    this.cubePos = cubePos;
     this._s1 = subtract(this.v1, this.v0);
-    this._s2 = subtract(this.v1, this.v4);
+    this._s2 = subtract(this.v2, this.v0);
+
+    // this._s1 = subtract(this.v0, this.v1);
+    // this._s2 = subtract(this.v3, this.v1);
+    this._v0 = add(this.cubePos, mult(this.sizeLength, this.vertexes[0])); // red
+    this._v1 = add(this.cubePos, mult(this.sizeLength, this.vertexes[1])); // green
+    this._v2 = add(this.cubePos, mult(this.sizeLength, this.vertexes[2])); // blue
+    // this._v3 = add(this.cubePos, mult(this.sizeLength, this.vertexes[3]));
+    // this._v4 = add(this.cubePos, mult(this.sizeLength, this.vertexes[4])); // yellow
+
     this._normal = normalize(cross(this.s1, this.s2));
+    console.log(`normal ${this._normal}`);
   }
 
   get v0() {
-    return this.vertexes[1];
+    return add(this.cubePos, mult(this.sizeLength, this.vertexes[0]));
   }
 
   get v1() {
-    return this.vertexes[0];
+    return add(this.cubePos, mult(this.sizeLength, this.vertexes[1]));
   }
 
   get v2() {
-    return this.vertexes[5];
+    return add(this.cubePos, mult(this.sizeLength, this.vertexes[2]));
   }
 
-  get v4() {
-    return this.vertexes[2];
-  }
+  // get v3() {
+  //   return add(this.cubePos, mult(this.sizeLength, this.vertexes[3]));
+  // }
+
+  // get v4() {
+  //   return add(this.cubePos, mult(this.sizeLength, this.vertexes[4]));
+  // }
 
   get normal() {
     return this._normal;
@@ -390,6 +454,51 @@ class FaceCollider {
 
   get p0() {
     return this.v0;
+  }
+
+  /**
+   * Testa se o ponto resultante do raio está dentro dos limites da face
+   * @param {Ray} ray - Raio a ser testado
+   * @returns {boolean}
+   */
+  isPointInFace(ray) {
+    const alpha_d = mult(ray.length, ray.direction);
+    const p = add(ray.from, alpha_d);
+
+    console.log(`Point is in ${p}, alpha is ${ray.length}`);
+
+    // gCubeVertexa.pos = this._v0;
+    // gCubeVertexb.pos = this._v1;
+    // gCubeVertexc.pos = this._v2;
+    // gCubeVertexd.pos = this._v4;
+
+    // prettier-ignore
+    const m = mat3( 
+      ray.direction[0], this.s1[0], this.s2[0],
+      ray.direction[1], this.s1[1], this.s2[1],
+      ray.direction[2], this.s1[2], this.s2[2],
+     );
+
+    const mDet = det(m);
+
+    if (mDet === 0) return false;
+
+    const w = subtract(ray.from, this.p0);
+
+    const invM = inverse(m);
+    const alphaM = mult(invM, w);
+
+    let [t, alpha1, alpha2] = alphaM;
+    alpha1 = alpha1;
+    alpha2 = alpha2;
+
+    // console.log(`Alpha M: ${alphaM}`);
+    // console.log(`S s1: ${this.s1} s2: ${this.s2}`);
+
+    if (alpha1 >= 0 && alpha1 <= 1 && alpha2 >= 0 && alpha2 <= 1 && alpha1 + alpha2 > 0) {
+      gCubeB.pos = this.v0;
+      return true;
+    }
   }
 }
 
@@ -542,6 +651,22 @@ class Material {
 
   static defaultMaterial() {
     return new Material(Color.White, Color.DarkGrey, 10000);
+  }
+
+  static red() {
+    return new Material(Color.Red, Color.DarkGrey, 10000);
+  }
+
+  static green() {
+    return new Material(Color.Green, Color.DarkGrey, 10000);
+  }
+
+  static blue() {
+    return new Material(Color.Blue, Color.DarkGrey, 10000);
+  }
+
+  static yellow() {
+    return new Material(Color.Yellow, Color.DarkGrey, 10000);
   }
 }
 
@@ -864,20 +989,37 @@ class World {
   }
 
   getNewBlockIndexByRayCollision(ray, playerPos) {
+    let nearestBlockCollisionPointIndexes;
+    let nearestBlockDistance = Infinity;
+
     for (let x = 0; x < this.worldSize; x++) {
       for (let y = 0; y < this.worldSize; y++) {
         for (let z = 0; z < this.worldHeight; z++) {
           const block = this.worldVoxelMatrixReferences[x][y][z];
           if (block !== null) {
-            const collisionTested = block.testFaceCollision(ray, playerPos);
+            const newIndexes = block.collider?.getNewBlockIndexByRayCollider(ray, playerPos);
 
-            if (collisionTested?.length) {
-              return ([x, y, z] = collisionTested);
+            if (!!newIndexes) {
+              // Teste se já há um bloco posicionado no índice
+              if (this.worldVoxelMatrixReferences[newIndexes[0]][newIndexes[1]][newIndexes[2]] != null) {
+                continue;
+              }
+
+              // console.log(`Face ${newIndexes}`);
+
+              const distanceToBlock = length(block.pos, playerPos);
+
+              if (distanceToBlock < nearestBlockDistance) {
+                nearestBlockCollisionPointIndexes = newIndexes;
+                nearestBlockDistance = distanceToBlock;
+              }
             }
           }
         }
       }
     }
+
+    if (nearestBlockCollisionPointIndexes) return nearestBlockCollisionPointIndexes;
   }
 
   hasCollisionWithWorld(ray) {
