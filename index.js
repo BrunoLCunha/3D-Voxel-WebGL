@@ -12,9 +12,11 @@ window.onload = main;
 const BACKGROUND_COLOR = [0, 0, 1, 1];
 const STEP_DELTA_TIME = 0.1;
 const PLAYER_SPEED = 300;
+const PLAYER_HEIGHT = 100;
 const WORLD_SIZE = 20;
 const WORLD_HEIGHT = 10;
 const RAY_SIZE = 100;
+const G = 9.8 * 50;
 
 var gCtx;
 var gCanvas;
@@ -63,7 +65,7 @@ const gBola = new Cube(vec3(0, 0, 90), vec3(0, 0, 0), vec3(30, 30, 30), vec3(0, 
 const gSphereA = new Sphere(vec3(50, -50, 20), vec3(25, 90, 90), vec3(20, 20, 50), vec3(20, 0, 0), vec3(0, 0, 0), 2);
 const gSphereB = new Sphere(vec3(-100, -100, 30), vec3(0, 0, 0), vec3(30, 30, 30), vec3(0, 20, 0), vec3(0, 0, 0), 4);
 
-const gCubeA = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(1, 1, 1), vec3(0, 0, 0), vec3(0, 0, 0));
+const gCubeAim = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(0.5, 0.5, 0.5), vec3(0, 0, 0), vec3(0, 0, 0));
 const gCubeB = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(50, 50, 50), vec3(0, 0, 0), vec3(0, 0, 0));
 
 const gRedCube = new Cube(vec3(0, 0, 0), vec3(0, 90, 90), vec3(5, 2, 400), vec3(0, 0, -360 / 60), vec3(0, 0, 0));
@@ -79,7 +81,8 @@ const gSphereYellow = new Sphere(
 );
 
 const gLight = new Light(vec4(0, 0, 0, 0), Color.White, Color.White, Color.DarkGrey);
-const gCamera = new Camera(vec3(0, 0, 100), vec3(0, 1, 100));
+const gCamera = new Camera(vec3(0, 0, PLAYER_HEIGHT), vec3(0, 1, PLAYER_HEIGHT));
+var gPlayerFallingVelocity = 0;
 var gWorld;
 
 var gMouse = { sensibility: 0.1 };
@@ -115,14 +118,23 @@ function main() {
  */
 function start() {
   console.log(`Unidades de textura disponíveis na GPU: ${gCtx.MAX_COMBINED_TEXTURE_IMAGE_UNITS}`);
-  gCubeA.setMaterial(Material.defaultMaterial());
   gCubeB.setMaterial(Material.defaultMaterial());
 
-  gObjects.push(gCubeA, gCubeB);
+  gObjects.push(gCubeB);
 
+  buildAim();
   buildWorld();
   buildShaders();
   initializeInterface();
+}
+
+function buildAim() {
+  gCubeAim.setMaterial(Material.defaultMaterial());
+  gCubeAim.pos = gCamera.pos;
+  let forward = gCamera.forward;
+  const newPosOffset = mult(50, vec3(forward[0], forward[1], forward[2]));
+  gCubeAim.vertexes = gCubeAim.vertexes.map((vertex) => add(vertex, newPosOffset));
+  gObjects.push(gCubeAim);
 }
 
 function buildWorld() {
@@ -168,12 +180,17 @@ function handleMouseMovementEvent(e) {
   const movementY = e.movementY;
 
   if (movementY) {
-    gCamera.theta = add(gCamera.theta, vec3(0, -movementY * gMouse.sensibility, 0));
+    const minY = Math.max(-89.9, gCamera.theta[1] - movementY * gMouse.sensibility);
+    const minMaxY = Math.min(89.9, minY);
+
+    gCamera.theta[1] = minMaxY;
   }
 
   if (movementX) {
     gCamera.theta = add(gCamera.theta, vec3(-movementX * gMouse.sensibility, 0, 0));
   }
+
+  gCubeAim.theta = vec3(gCamera.theta[1], 0, gCamera.theta[0]);
 }
 
 function handleMouseDownEvent(e) {
@@ -182,7 +199,7 @@ function handleMouseDownEvent(e) {
     console.log("Botão esquerdo do mouse pressionado");
     const from = gCamera.pos;
     const direction = normalize(gCamera.currentAt);
-    const length = 1;
+    const length = 200;
 
     console.log(`Lançado raio de ${from} com direção ${direction} e tamanho ${length}`);
     const ray = new Ray(from, direction, length);
@@ -390,7 +407,6 @@ function makeVAO(i) {
     var bufTextures = gCtx.createBuffer();
     gCtx.bindBuffer(gCtx.ARRAY_BUFFER, bufTextures);
     gCtx.bufferData(gCtx.ARRAY_BUFFER, flatten(gObjects[i].textureMap), gCtx.STATIC_DRAW);
-    console.log(JSON.stringify({ textureCords: gObjects[i].textureMap }));
 
     var aTextureCoord = gCtx.getAttribLocation(gShader.program, "aTextureCoord");
     gCtx.vertexAttribPointer(aTextureCoord, 2, gCtx.FLOAT, false, 0, 0);
@@ -427,7 +443,7 @@ function render() {
 
   gCamera.currentAt = vec3(forward[0], forward[1], forward[2]);
   let at = add(gCamera.pos, gCamera.currentAt);
-  gCubeA.pos = add(gCamera.pos, mult(RAY_SIZE, gCamera.currentAt));
+  gCubeAim.pos = gCamera.pos;
 
   up = mult(roll, up);
 
@@ -510,12 +526,43 @@ function update(forcar, deltaTime) {
     objeto.theta = add(objeto.theta, mult(deltaTime, objeto.vtheta));
   }
 
-  if (length(gCamera.mDir) > 0) {
-    let normalizedDir = mult(deltaTime * PLAYER_SPEED, normalize(gCamera.mDir));
-    let pitch = rotateZ(gCamera.theta[0]);
-    let movDirRotated = mult(pitch, normalizedDir);
+  handleCollision(deltaTime);
+  handlePlayerJump(deltaTime);
+}
 
-    gCamera.pos = add(gCamera.pos, vec3(movDirRotated[0], movDirRotated[1], movDirRotated[2]));
+function handleCollision(deltaTime) {
+  if (length(gCamera.mDir) > 0) {
+    let normalizedDir = normalize(gCamera.mDir);
+    let movement = mult(deltaTime * PLAYER_SPEED, normalizedDir);
+    let pitch = rotateZ(gCamera.theta[0]);
+    let movementRotated = mult(pitch, movement);
+
+    const rayFrom = subtract(gCamera.pos, new vec3(0, 0, PLAYER_HEIGHT / 2));
+    const rayDirection = normalize(vec3(movementRotated[0], movementRotated[1], movementRotated[2]));
+
+    if (gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, 20))) {
+      console.log("Collision detected");
+      return;
+    }
+
+    gCamera.pos = add(gCamera.pos, vec3(movementRotated[0], movementRotated[1], movementRotated[2]));
+  }
+}
+
+function handlePlayerJump(deltaTime) {
+  let onGround = false;
+
+  const rayFrom = gCamera.pos;
+  const rayDirection = normalize(vec3(0, 0, -1));
+
+  if (gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, PLAYER_HEIGHT))) {
+    onGround = true;
+    gPlayerFallingVelocity = 0;
+  }
+
+  if (!onGround) {
+    gPlayerFallingVelocity += deltaTime * G;
+    gCamera.pos = subtract(gCamera.pos, mult(deltaTime, vec3(0, 0, gPlayerFallingVelocity)));
   }
 }
 

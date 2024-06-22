@@ -100,9 +100,9 @@ class GameObject {
    * @param {Ray} ray - Raio disparado
    * @returns {string} - Face colidida mais próxima (se houver colisão)
    */
-  testCollision(ray, playerPos) {
+  testFaceCollision(ray, playerPos) {
     if (this.collider) {
-      const collisionPoint = this.collider.testCollision(ray, playerPos);
+      const collisionPoint = this.collider.testRayCollision(ray, playerPos);
 
       // if (collisionPoint) console.log(`Collision point ${collisionPoint}`);
 
@@ -226,8 +226,8 @@ class CubeCollider extends Collider {
    * @param {Ray} ray - Raio disparado
    * @returns {string} - Face atingida
    */
-  testCollision(ray, playerPos) {
-    const topCollisionPoint = this.testFaceCollision(ray, this._top);
+  testRayCollision(ray, playerPos) {
+    const topCollisionPoint = this.testRayFaceCollision(ray, this._top);
 
     const collisionFaces = [topCollisionPoint].filter((point) => !!point);
 
@@ -256,24 +256,67 @@ class CubeCollider extends Collider {
    * @param {FaceCollider} face - Face testada
    * @returns {vec3} - Ponto da colisão
    */
-  testFaceCollision(ray, face) {
+  testRayFaceCollision(ray, face) {
     const isFacingNormal = dot(ray.direction, face.normal) < 0;
     if (!isFacingNormal) return;
 
-    const r0p0 = subtract(add(this._cube.pos, face.p0), ray.from);
+    const n = face.normal;
+    const d = ray.direction;
 
-    const alpha = dot(r0p0, face.normal) / dot(ray.direction, face.normal);
+    const p0 = add(this._cube.pos, mult(this._cube.escala[0], face.p0));
+    const r0 = ray.from;
+    const r0p0 = subtract(p0, r0);
 
-    const p0p = subtract(mult(alpha, ray.direction), subtract(add(this._cube.pos, face.p0), ray.from));
-    const projection1 = dot(p0p, face.s1) / length(face.s1) + this._cube.escala[0] / 2;
-    const projection2 = dot(p0p, face.s2) / length(face.s2) + this._cube.escala[1] / 2;
+    const alpha = dot(r0p0, n) / dot(n, d);
+
+    if (alpha <= 0 || alpha > ray.length) return;
+
+    const alphaXd = mult(alpha, d);
+    const p0r0 = subtract(p0, r0);
+
+    const p0p = subtract(alphaXd, p0r0);
+    const projection1 = dot(p0p, mult(this._cube.escala[0], face.s1)) / (this._cube.escala[0] * length(face.s1));
+    const projection2 = dot(p0p, mult(this._cube.escala[1], face.s2)) / (this._cube.escala[1] * length(face.s2));
 
     if (projection1 > 0 && projection1 < this._cube.escala[0]) {
-      if (projection2 > 0 && projection2 < this._cube.escala[1]) {
-        const p = add(ray.from, mult(alpha, ray.direction));
+      if (projection2 > -this._cube.escala[0] / 2 && projection2 < this._cube.escala[1] / 2) {
+        const p = add(r0, alphaXd);
         console.log(`Collided with face in point ${p}`);
-        gCubeB.pos = p;
+        gCubeB.pos = p0;
         return p;
+      }
+    }
+
+    // const n = face.normal;
+    // const d = ray.direction;
+    // const r0 = ray.from;
+
+    // const p0 = add(this._cube.pos, face.p0);
+
+    // const t = dot(n, substract(p0, r0)) / dot(n, d);
+  }
+
+  /**
+   * @param {Ray} ray - Raio disparado
+   * @returns {boolean} - Retorna se o raio estiver dentro do colisor
+   */
+  testSimpleCollision(ray) {
+    const rayPoint = add(ray.from, mult(ray.length, ray.direction));
+
+    if (
+      this._cube.pos[0] + this._cube.escala[0] / 2 > rayPoint[0] &&
+      this._cube.pos[0] - this._cube.escala[0] / 2 < rayPoint[0]
+    ) {
+      if (
+        this._cube.pos[1] + this._cube.escala[1] / 2 > rayPoint[1] &&
+        this._cube.pos[1] - this._cube.escala[1] / 2 < rayPoint[1]
+      ) {
+        if (
+          this._cube.pos[2] + this._cube.escala[2] / 2 > rayPoint[2] &&
+          this._cube.pos[2] - this._cube.escala[2] / 2 < rayPoint[2]
+        ) {
+          return true;
+        }
       }
     }
   }
@@ -281,9 +324,9 @@ class CubeCollider extends Collider {
 
 class Ray {
   /**
-   * @param {Ray} from - Ponto inicial
-   * @param {FaceCollider} direction - Direção do raio
-   * @param {FaceCollider} length - Tamanho do raio
+   * @param {vec3} from - Ponto inicial
+   * @param {vec3} direction - Direção do raio
+   * @param {number} length - Tamanho do raio
    * @returns {Ray}
    */
   constructor(from, direction, length) {
@@ -586,19 +629,17 @@ class TextureBuffer {
     // const [start, end] = this.getTextureMappingByIndex(this.textureIndex++);
     const offset = textureIndex * sizePerTexture * 4;
 
-    console.log(textureIndex);
-
     for (let s = 0; s < sizePerTexture * 4; s++) {
       for (let t = 0; t < sizePerTexture * 4; t++) {
-        if (textureIndex == 1) {
-          console.log(
-            `Saving texture at buffer index: ${s * (textureIndex + 1) * sizePerTexture + t}, texture buffer: ${
-              s * sizePerTexture + t
-            }, s: ${s}, t: ${t}, textureIndex: ${textureIndex} with colour component: ${
-              texture.getTextureBytes()[s * sizePerTexture * 4 + t]
-            } and texture length: ${texture.getTextureBytes().length} offset: ${offset}`
-          );
-        }
+        // if (textureIndex == 1) {
+        //   console.log(
+        //     `Saving texture at buffer index: ${s * (textureIndex + 1) * sizePerTexture + t}, texture buffer: ${
+        //       s * sizePerTexture + t
+        //     }, s: ${s}, t: ${t}, textureIndex: ${textureIndex} with colour component: ${
+        //       texture.getTextureBytes()[s * sizePerTexture * 4 + t]
+        //     } and texture length: ${texture.getTextureBytes().length} offset: ${offset}`
+        //   );
+        // }
 
         this.buffer[s * bufferSize * 4 + t + textureIndex * sizePerTexture * 4] =
           texture.getTextureBytes()[s * sizePerTexture * 4 + t];
@@ -625,8 +666,6 @@ class TextureBuffer {
     const colUnclamped0 = index * offset;
     const s = Math.floor(colUnclamped0) * offset;
     const t = colUnclamped0 % 1;
-
-    console.log(s);
 
     return [vec2(t, s), vec2(t + offset, s + offset)];
   }
@@ -830,7 +869,7 @@ class World {
         for (let z = 0; z < this.worldHeight; z++) {
           const block = this.worldVoxelMatrixReferences[x][y][z];
           if (block !== null) {
-            const collisionTested = block.testCollision(ray, playerPos);
+            const collisionTested = block.testFaceCollision(ray, playerPos);
 
             if (collisionTested?.length) {
               return ([x, y, z] = collisionTested);
@@ -839,6 +878,25 @@ class World {
         }
       }
     }
+  }
+
+  hasCollisionWithWorld(ray) {
+    for (let x = 0; x < this.worldSize; x++) {
+      for (let y = 0; y < this.worldSize; y++) {
+        for (let z = 0; z < this.worldHeight; z++) {
+          const block = this.worldVoxelMatrixReferences[x][y][z];
+          if (block !== null) {
+            const collisionTested = block.collider.testSimpleCollision(ray);
+
+            if (collisionTested) {
+              return collisionTested;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
   buildGround(groundLevel) {
@@ -863,11 +921,8 @@ class World {
       this.setBlockByIndex(x, y, z, block);
       block.setIndexInWorldVolume(x, y, z);
 
-      console.log(block.diffuseIndex);
-
       const [start, end] = this.blockController.diffuseTextureBuffer.getTextureMappingByIndex(block.diffuseIndex);
 
-      // var vT = [vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0)];
       var vT = [vec2(start[0], start[1]), vec2(end[0], start[1]), vec2(end[0], end[1]), vec2(start[0], end[1])];
 
       // prettier-ignore
@@ -877,9 +932,6 @@ class World {
       ];
 
       var textureCords = [].concat(...Array(6).fill(textureCordsBase));
-      // console.log(JSON.stringify({ textureCords }));
-
-      console.log(JSON.stringify({ start: start, end: end }));
 
       block.setTextureMap(textureCords);
       gObjects.push(block);
