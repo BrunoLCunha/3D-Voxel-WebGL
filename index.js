@@ -19,6 +19,7 @@ const WORLD_HEIGHT = 10;
 const RAY_SIZE = 100;
 const G = 9.8 * 50;
 const HALF_CUBE_SIZE = 25;
+const DISCART_COORD = vec3(10000, 10000, 10000);
 
 var gCtx;
 var gCanvas;
@@ -62,34 +63,13 @@ var gYellowMaterial = new Material(Color.Yellow, Color.DarkGrey, 1000);
 
 var gBlockType = 0;
 
-const gChao = new Cube(vec3(0, 0, -10), vec3(0, 0, 0), vec3(1000, 1000, 20), vec3(0, 0, 0), vec3(0, 0, 0));
-const gBola = new Cube(vec3(0, 0, 90), vec3(0, 0, 0), vec3(30, 30, 30), vec3(0, 0, 0), vec3(0, 0, 0));
-
-const gSphereA = new Sphere(vec3(50, -50, 20), vec3(25, 90, 90), vec3(20, 20, 50), vec3(20, 0, 0), vec3(0, 0, 0), 2);
-const gSphereB = new Sphere(vec3(-100, -100, 30), vec3(0, 0, 0), vec3(30, 30, 30), vec3(0, 20, 0), vec3(0, 0, 0), 4);
-
-const gCubeAim = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(0.5, 0.5, 0.5), vec3(0, 0, 0), vec3(0, 0, 0));
-const gCubeB = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(50, 50, 50), vec3(0, 0, 0), vec3(0, 0, 0));
-
-const gCubeVertexa = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
-const gCubeVertexb = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
-const gCubeVertexc = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
-const gCubeVertexd = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
-
-const gRedCube = new Cube(vec3(0, 0, 0), vec3(0, 90, 90), vec3(5, 2, 400), vec3(0, 0, -360 / 60), vec3(0, 0, 0));
-const gRedCube2 = new Cube(vec3(0, 0, 0), vec3(0, 90, 90), vec3(10, 5, 400), vec3(0, 0, -0.1), vec3(0, 0, 0));
-
-const gSphereYellow = new Sphere(
-  vec3(-100, 0, 20),
-  vec3(25, 90, 90),
-  vec3(20, 20, 5),
-  vec3(20, 0, 0),
-  vec3(-0.1, -0.1, 0),
-  2
-);
+let gCubeAim = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(0.5, 0.5, 0.5), vec3(0, 0, 0), vec3(0, 0, 0));
 
 const gLight = new Light(vec4(0, 0, 0, 0), Color.White, Color.White, Color.DarkGrey);
-const gCamera = new Camera(vec3(-50, -50, PLAYER_HEIGHT + HALF_CUBE_SIZE), vec3(-50, -49, PLAYER_HEIGHT + HALF_CUBE_SIZE));
+const gCamera = new Camera(
+  vec3(-50, -50, PLAYER_HEIGHT + HALF_CUBE_SIZE),
+  vec3(-50, -49, PLAYER_HEIGHT + HALF_CUBE_SIZE)
+);
 
 var gPlayerVerticalVelocity = 0;
 var gPlayerOnGround = false;
@@ -126,32 +106,13 @@ function main() {
 /**
  * Inicialização do mundo
  *
- * Atribui interface, cria objetos e realiza alocação na lista global "gObjects"
+ * Atribui interface, cria objetos, mira e shaders
  */
 function start() {
-  console.log(`Unidades de textura disponíveis na GPU: ${gCtx.MAX_COMBINED_TEXTURE_IMAGE_UNITS}`);
-  gCubeB.setMaterial(Material.defaultMaterial());
-
-  gCubeVertexa.setMaterial(Material.red());
-  gCubeVertexb.setMaterial(Material.green());
-  gCubeVertexc.setMaterial(Material.blue());
-  gCubeVertexd.setMaterial(Material.yellow());
-
-  gObjects.push(gCubeB, gCubeVertexa, gCubeVertexb, gCubeVertexc, gCubeVertexd);
-
-  buildAim();
   buildWorld();
+  buildAim();
   buildShaders();
   initializeInterface();
-}
-
-function buildAim() {
-  gCubeAim.setMaterial(Material.defaultMaterial());
-  gCubeAim.pos = gCamera.pos;
-  let forward = gCamera.forward;
-  const newPosOffset = mult(50, vec3(forward[0], forward[1], forward[2]));
-  gCubeAim.vertexes = gCubeAim.vertexes.map((vertex) => add(vertex, newPosOffset));
-  gObjects.push(gCubeAim);
 }
 
 function buildWorld() {
@@ -160,10 +121,6 @@ function buildWorld() {
 
   gWorld.buildGround(halfWL);
   gWorld.build();
-
-  // worldVoxelMatrix[5][5][5] = 1;
-  // worldVoxelMatrix[5][5][6] = 1;
-  // worldVoxelMatrix[6][5][6] = 0;
 }
 
 /**
@@ -174,7 +131,6 @@ function buildWorld() {
 function initializeInterface() {
   gInterface.jogarPausar = document.getElementById("bRun");
   gInterface.passo = document.getElementById("bStep");
-
   gInterface.jogarPausar.onclick = playOrPause;
 
   window.onkeydown = (e) => handleKeyboardEvent(e, true);
@@ -192,6 +148,12 @@ function initializeInterface() {
   });
 }
 
+/**
+ * Lida com eventos recebidos de movimento do mouse
+ *
+ * Rotaciona o vetor de visão da câmera com base no deslocamento do mouse,
+ * a rotação é limitada verticalmente em 89.9 graus, evitando o flip que seria ocasionado com um ângulo maior que o definido
+ */
 function handleMouseMovementEvent(e) {
   const movementX = e.movementX;
   const movementY = e.movementY;
@@ -210,6 +172,12 @@ function handleMouseMovementEvent(e) {
   gCubeAim.theta = vec3(gCamera.theta[1], 0, gCamera.theta[0]);
 }
 
+/**
+ * Lida com eventos recebidos dos botões do mouse
+ *
+ * Caso o jogador pressione o botão esquerdo do mouse, cria um raio a partir da posição da câmera com direção "at" e tamanho limitado (200),
+ * se o raio atingir algum bloco do volume, um novo bloco é posicionado dependendo de qual face do cubo colidiu
+ */
 function handleMouseDownEvent(e) {
   const leftButtonDown = e?.button === 0;
   if (leftButtonDown && gCamera.currentAt) {
@@ -226,7 +194,7 @@ function handleMouseDownEvent(e) {
     if (newBlockIndex?.length) {
       const [x, y, z] = newBlockIndex;
       gWorld.placeBlock(gBlockType, vec3(x, y, z));
-      console.log(`Block can be place at ${x}, ${y}, ${z}`);
+      console.log(`Bloco pode ser colocado em: ${x}, ${y}, ${z}`);
     }
   }
 }
@@ -238,6 +206,8 @@ function handleMouseDownEvent(e) {
  * S - Andar para trás
  * A - Andar para a esquerda
  * D - Andar para a direita
+ * SPACE - Pular
+ * 1 a 3 - Seleciona o tipo de bloco para colocar no mundo
  */
 function handleKeyboardEvent(e, down) {
   const { keyCode } = e;
@@ -301,24 +271,25 @@ function handleKeyboardEvent(e, down) {
     }
   }
 
-  if (keyCode == gKeyCode["1"]) {
+  if (keyCode == gKeyCode["1"] && gBlockType != 0) {
     gBlockType = 0;
+    updateAim();
+
     console.log("Bloco escolhido: Grama");
   }
 
-  if (keyCode == gKeyCode["2"]) {
+  if (keyCode == gKeyCode["2"] && gBlockType != 1) {
     gBlockType = 1;
+    updateAim();
+
     console.log("Bloco escolhido: Pedra");
   }
 
-  if (keyCode == gKeyCode["3"]) {
+  if (keyCode == gKeyCode["3"] && gBlockType != 2) {
     gBlockType = 2;
-    console.log("Bloco escolhido: Madeira");
-  }
+    updateAim();
 
-  if (keyCode == gKeyCode["4"]) {
-    gBlockType = 3;
-    console.log("Bloco escolhido: Grama");
+    console.log("Bloco escolhido: Madeira");
   }
 }
 
@@ -338,10 +309,7 @@ function playOrPause() {
 }
 
 /**
- * Cria cada VAO gShader.VAO[x] associado ao objeto gObjects[x]
- *
- * Atribui aNormal, aPosition, aColor para cada objeto, além de atribuir também os uniforms de perspectiva,
- * modelView e demais uniforms necessários para o modelo de iluminação de Phong
+ * Realiza chamada para criação dos VAOs e resolve uniforms de visualização do objeto, câmera e perspectiva
  */
 function buildShaders() {
   gShader.VAO = [];
@@ -367,6 +335,9 @@ function buildShaders() {
   gCtx.uniform4fv(gShader.uLightPos, gLight.pos);
 }
 
+/**
+ * Realiza a criação do array de VAO para cada objeto em gObjects
+ */
 function makeVAOs() {
   gShader.VAO = [];
   for (let i = 0; i < gObjects.length; i++) {
@@ -374,8 +345,12 @@ function makeVAOs() {
   }
 }
 
-function makeVAO(i) {
-  gShader.VAO.push(gCtx.createVertexArray());
+/**
+ * Realiza a criação de uma posição (um objeto) do array de VAO, contendo a posição dos vértices, normais, cores e mapas de textura
+ */
+function makeVAO(i, replace) {
+  if (!replace) gShader.VAO.push(gCtx.createVertexArray());
+
   gCtx.bindVertexArray(gShader.VAO[i]);
 
   // buffer das normais
@@ -426,7 +401,7 @@ function makeVAO(i) {
   gShader.uTextureMap = gCtx.getUniformLocation(gShader.program, "uTextureMap");
 
   // textura
-  if (!!gObjects[i].texture) {
+  if (gObjects[i].texture) {
     var bufTextures = gCtx.createBuffer();
     gCtx.bindBuffer(gCtx.ARRAY_BUFFER, bufTextures);
     gCtx.bufferData(gCtx.ARRAY_BUFFER, flatten(gObjects[i].textureMap), gCtx.STATIC_DRAW);
@@ -440,8 +415,8 @@ function makeVAO(i) {
 /**
  * Desenha cada objeto contido no array gObjects.
  *
- * Caso o VAO relacionado a determinada posição do array de objetos não for definido, é realizada uma chamada para recriacao do array
- * Nesta função, é montada a matriz model view de cada objeto e uView, além das matrizes necessárias para o modelo de iluminação de Phong
+ * Caso o VAO relacionado a determinada posição do array de objetos não for definido, é realizada uma chamada para recriação apenas da posição ausente
+ * Nesta função, é montada a matriz model view de cada objeto e uView, além das matrizes necessárias para o modelo de iluminação de Phong e texturização
  *
  * Após o desenho, é feita uma chamada ao método responsável por realizar a atualização dos objetos no próximo quadro
  */
@@ -537,7 +512,7 @@ function render() {
 /**
  * Calcula novas posições e rotações para os objetos em gObjects caso a cena não esteja pausada
  *
- * Também calcula a nova posição da câmera, com direção no vetor forward e tamanho de deslocamento vTrans
+ * Realiza chamadas às funções responsáveis por calcular colisões e movimento vertical do jogador
  */
 function update(forcar, deltaTime) {
   if (!gPlaying && !forcar) return;
@@ -553,6 +528,10 @@ function update(forcar, deltaTime) {
   handlePlayerGravity(deltaTime);
 }
 
+/**
+ * Realiza o cálculo de colisão de movimentos do jogador (em XY) com os cubos do volume (gWorld),
+ * caso exista colisão, a posição não é atualizada, mantendo o jogador parado
+ */
 function handleCollision(deltaTime) {
   if (length(gCamera.mDir) > 0) {
     let normalizedDir = normalize(gCamera.mDir);
@@ -570,7 +549,6 @@ function handleCollision(deltaTime) {
 
     const collisionCube = gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, 5));
     if (collisionCube) {
-      console.log("COLIISION");
       return;
     }
 
@@ -578,6 +556,10 @@ function handleCollision(deltaTime) {
   }
 }
 
+/**
+ * Realiza o cálculo da posição atual do jogador com base na velocidade e da colisão de um raio lançado na posição do jogador,
+ * com direção a -Z (chão) e tamanho "PLAYER_HEIGHT"
+ */
 function handlePlayerGravity(deltaTime) {
   gCamera.pos = add(gCamera.pos, mult(deltaTime, vec3(0, 0, gPlayerVerticalVelocity)));
 
@@ -599,11 +581,43 @@ function handlePlayerGravity(deltaTime) {
   }
 }
 
+/**
+ * Realiza a ação de pular, ao definir a velocidade de pulo no instante atual e a flag responsável por indicar esta ação, 
+ * evitando múltiplas chamadas antes do jogador tocar no chão novamente
+ */
 function handlePlayerJump() {
   if (gPlayerJumping) return;
 
   gPlayerJumping = true;
   gPlayerVerticalVelocity = PLAYER_JUMP_VELOCITY;
+}
+
+/**
+ * Cria ou modifica a mira
+ *
+ * Cria um outro objeto de mira com a textura do bloco escolhido, isso é feito para realizar a alteração de textura
+ */
+function buildAim() {
+  const newCubeAim = new Cube(gCubeAim.pos, gCubeAim.theta, gCubeAim.escala, vec3(0, 0, 0), vec3(0, 0, 0));
+  gCubeAim.pos = DISCART_COORD; // Descarta a mira atual em uma posição distante
+  gCubeAim = newCubeAim;
+
+  const material = new Material(vec4(1, 1, 1, 1), vec4(1, 1, 1, 1), 0);
+  gCubeAim.setMaterial(material);
+
+  gCubeAim.setTexture(gBlockType);
+  gWorld.setBlockTextureMap(gCubeAim);
+
+  gCubeAim.pos = gCamera.pos;
+  let forward = gCamera.forward;
+  const newPosOffset = mult(50, vec3(forward[0], forward[1], forward[2]));
+  gCubeAim.vertexes = gCubeAim.vertexes.map((vertex) => add(vertex, newPosOffset));
+
+  gObjects.push(gCubeAim);
+}
+
+function updateAim() {
+  buildAim();
 }
 
 /* ==================================================================
@@ -613,7 +627,7 @@ function handlePlayerJump() {
     Uniforms necessários para o modelo de iluminação de Phong;
     Posição da luz;
 */
-gVertexShaderSrc = `#version 300 es
+var gVertexShaderSrc = `#version 300 es
 
     in vec3 aPosition;
     in vec3 aNormal;
@@ -660,7 +674,7 @@ gVertexShaderSrc = `#version 300 es
 
     Caso a flag useVertexColor esteja ativa, o vColor é usado no lugar do uniform uDiffuse
 */
-gFragmentShaderSrc = `#version 300 es
+var gFragmentShaderSrc = `#version 300 es
     
     precision highp float;
     

@@ -30,11 +30,17 @@ class GameObject {
     this.calculateNormals();
   }
 
+  /**
+   * Define o índice da textura no espaço do buffer (uma unidade de textura na GPU é utilizada para todos os objetos e texturas)
+   */
   setTexture(diffuseIndex) {
     this.diffuseIndex = diffuseIndex;
     this.texture = true;
   }
 
+  /**
+   * Define as coordenadas da textura (s, t)
+   */
   setTextureMap(textureMap) {
     this.textureMap = textureMap;
   }
@@ -175,7 +181,7 @@ class Cube extends GameObject {
       faceColliderRight,
       faceColliderLeft,
       faceColliderFront,
-      faceColliderBack,
+      faceColliderBack
     );
 
     super.collider = cubeCollider;
@@ -214,6 +220,8 @@ class CubeCollider extends Collider {
   }
 
   /**
+   * Retorna o índice do novo bloco se houver alguma colisão válida entre o raio e uma face do cubo,
+   * se houver mais de uma colisão, utiliza o índice correspondente da mais próxima
    * @param {Ray} ray - Raio disparado
    * @param {vec3} playerPos - Posição do jogador
    * @returns {number[]} - Índice do novo bloco de acordo com a face atingida mais próxima
@@ -250,8 +258,6 @@ class CubeCollider extends Collider {
       [this._cube.index.x, this._cube.index.y + 1, this._cube.index.z], // back
     ];
 
-    // console.log("top collision", this._cube.index);
-
     let nearestFaceIndex = 0;
 
     const nearestCollidedFace = collisionFaces.reduce((nearestCollidedFace, actualCollidedFace, index) => {
@@ -279,13 +285,10 @@ class CubeCollider extends Collider {
       );
       return mapNewCubeIndexByFaceCollided[nearestFaceIndex];
     }
-
-    // return [this._cube.index.x, this._cube.index.y, this._cube.index.z + 1];
-
-    // return [this._cube.index.x, this._cube.index.y, this._cube.index.z + 1];
   }
 
   /**
+   * Retorna o ponto da colisão do raio recebido com uma das faces, descobrindo o alpha e testando se o ponto está dentro dos limites dos vértices
    * @param {Ray} ray - Raio disparado
    * @param {QuadCollider} face - Face testada
    * @returns {vec3} - Ponto da colisão
@@ -311,38 +314,15 @@ class CubeCollider extends Collider {
 
     if (alpha <= 0 || alpha > ray.length) return;
 
-    // const p0r0 = subtract(p0, r0);
-
     if (face.isPointInFace(new Ray(r0, d, alpha))) {
       const alpha_d = mult(alpha, d);
       const p = add(r0, alpha_d);
-      // gCubeB.pos = p;
       return p;
     }
-
-    // const p0p = subtract(alpha_d, p0r0);
-
-    // const projection1 = dot(p0p, mult(this._cube.escala[0], face.s1)) / (this._cube.escala[0] * length(face.s1));
-    // const projection2 = dot(p0p, mult(this._cube.escala[1], face.s2)) / (this._cube.escala[1] * length(face.s2));
-
-    // if (projection1 > 0 && projection1 < this._cube.escala[0]) {
-    //   if (projection2 > -this._cube.escala[0] / 2 && projection2 < this._cube.escala[1] / 2) {
-    //     // console.log(`Collided with face in point ${p}`);
-    //     gCubeB.pos = p0;
-    //     return p;
-    //   }
-    // }
-
-    // const n = face.normal;
-    // const d = ray.direction;
-    // const r0 = ray.from;
-
-    // const p0 = add(this._cube.pos, face.p0);
-
-    // const t = dot(n, substract(p0, r0)) / dot(n, d);
   }
 
   /**
+   * Testa se o ponto resultante do raio está dentro do volume deste cubo
    * @param {Ray} ray - Raio disparado
    * @returns {boolean} - Retorna se o raio estiver dentro do colisor
    */
@@ -408,16 +388,11 @@ class QuadCollider {
     this._s1 = subtract(this.v1, this.v0);
     this._s2 = subtract(this.v2, this.v0);
 
-    // this._s1 = subtract(this.v0, this.v1);
-    // this._s2 = subtract(this.v3, this.v1);
-    this._v0 = add(this.cubePos, mult(this.sizeLength, this.vertexes[0])); // red
-    this._v1 = add(this.cubePos, mult(this.sizeLength, this.vertexes[1])); // green
-    this._v2 = add(this.cubePos, mult(this.sizeLength, this.vertexes[2])); // blue
-    // this._v3 = add(this.cubePos, mult(this.sizeLength, this.vertexes[3]));
-    // this._v4 = add(this.cubePos, mult(this.sizeLength, this.vertexes[4])); // yellow
+    this._v0 = add(this.cubePos, mult(this.sizeLength, this.vertexes[0]));
+    this._v1 = add(this.cubePos, mult(this.sizeLength, this.vertexes[1]));
+    this._v2 = add(this.cubePos, mult(this.sizeLength, this.vertexes[2]));
 
     this._normal = normalize(cross(this.s1, this.s2));
-    console.log(`normal ${this._normal}`);
   }
 
   get v0() {
@@ -431,14 +406,6 @@ class QuadCollider {
   get v2() {
     return add(this.cubePos, mult(this.sizeLength, this.vertexes[2]));
   }
-
-  // get v3() {
-  //   return add(this.cubePos, mult(this.sizeLength, this.vertexes[3]));
-  // }
-
-  // get v4() {
-  //   return add(this.cubePos, mult(this.sizeLength, this.vertexes[4]));
-  // }
 
   get normal() {
     return this._normal;
@@ -465,12 +432,7 @@ class QuadCollider {
     const alpha_d = mult(ray.length, ray.direction);
     const p = add(ray.from, alpha_d);
 
-    console.log(`Point is in ${p}, alpha is ${ray.length}`);
-
-    // gCubeVertexa.pos = this._v0;
-    // gCubeVertexb.pos = this._v1;
-    // gCubeVertexc.pos = this._v2;
-    // gCubeVertexd.pos = this._v4;
+    // console.log(`Point is in ${p}, alpha is ${ray.length}`); // exibe as coordenadas do ponto P no mundo
 
     // prettier-ignore
     const m = mat3( 
@@ -492,11 +454,7 @@ class QuadCollider {
     alpha1 = alpha1;
     alpha2 = alpha2;
 
-    // console.log(`Alpha M: ${alphaM}`);
-    // console.log(`S s1: ${this.s1} s2: ${this.s2}`);
-
     if (alpha1 >= 0 && alpha1 <= 1 && alpha2 >= 0 && alpha2 <= 1 && alpha1 + alpha2 > 0) {
-      gCubeB.pos = this.v0;
       return true;
     }
   }
@@ -513,7 +471,6 @@ class BlockController {
       gCtx
     );
 
-    // diffuseTextureBuffer.addTexture(this.textures[0]);
     this.textures.forEach((texture) => diffuseTextureBuffer.addTexture(texture));
     this.diffuseTextureBuffer = diffuseTextureBuffer;
     this.textureBuffer = diffuseTextureBuffer;
@@ -539,71 +496,6 @@ class BlockController {
     cube.setMaterial(Material.defaultMaterial());
     cube.setTexture(2);
     return cube;
-  }
-}
-
-/* ==================================================================
-    Classe criada para representar esferas
-
-    Seu construtor possui os parâmetros de posicao, rotacao, escala, velocidade de rotacao, velocidade de translação,
-    que definirão a matriz modelView gerada pela CPU na etapa de desenho e ndivisoes, que define a resolução da esfera (em nº de triângulos)
-*/
-class Sphere extends GameObject {
-  /**
-   * @param {vec3} pos - Translação do centro do objeto para as coordenadas do mundo
-   * @param {vec3} theta - Rotação do objeto com relação a cada eixo do mundo
-   * @param {vec3} escala - Escala do objeto com relação a cada eixo do mundo
-   * @param {vec3} vtheta - Velocidade de rotação do objeto com relação a cada eixo do mundo
-   * @param {vec3} vtrans - Velocidade de translação do objeto com relação a cada eixo do mundo
-   * @param {vec3} ndivisoes - Número de divisões consecutivas de cada triângulo da esfera (balão) inicial
-   * @returns {Sphere} - Sphere com as transformações e resolução fornecidas
-   */
-
-  constructor(pos, theta, escala, vtheta, vtrans, ndivisoes) {
-    super(pos, theta, escala, vtheta, vtrans);
-
-    let vp = [vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0)];
-
-    let vn = [vec3(-1.0, 0.0, 0.0), vec3(0.0, -1.0, 0.0), vec3(0.0, 0.0, -1.0)];
-
-    let baseTriangles = [
-      [vp[0], vp[1], vp[2]],
-      [vp[0], vp[2], vn[1]],
-      [vp[0], vn[2], vp[1]],
-      [vp[0], vn[1], vn[2]],
-      [vn[0], vp[2], vp[1]],
-      [vn[0], vn[1], vp[2]],
-      [vn[0], vp[1], vn[2]],
-      [vn[0], vn[2], vn[1]],
-    ];
-
-    this.vertexes = [];
-    for (let i = 0; i < baseTriangles.length; i++) {
-      let a, b, c;
-      [a, b, c] = baseTriangles[i];
-      this.subdivideTriangles(a, b, c, ndivisoes);
-    }
-
-    super.setMesh(this.vertexes);
-  }
-
-  subdivideTriangles(a, b, c, ndivs) {
-    if (ndivs > 0) {
-      let ab = mix(a, b, 0.5);
-      let bc = mix(b, c, 0.5);
-      let ca = mix(c, a, 0.5);
-
-      ab = normalize(ab);
-      bc = normalize(bc);
-      ca = normalize(ca);
-
-      this.subdivideTriangles(a, ab, ca, ndivs - 1);
-      this.subdivideTriangles(b, bc, ab, ndivs - 1);
-      this.subdivideTriangles(c, ca, bc, ndivs - 1);
-      this.subdivideTriangles(ab, bc, ca, ndivs - 1);
-    } else {
-      this.vertexes.push(a, b, c);
-    }
   }
 }
 
@@ -751,21 +643,8 @@ class TextureBuffer {
 
     const textureIndex = this.textureIndex;
 
-    // const [start, end] = this.getTextureMappingByIndex(this.textureIndex++);
-    const offset = textureIndex * sizePerTexture * 4;
-
     for (let s = 0; s < sizePerTexture * 4; s++) {
       for (let t = 0; t < sizePerTexture * 4; t++) {
-        // if (textureIndex == 1) {
-        //   console.log(
-        //     `Saving texture at buffer index: ${s * (textureIndex + 1) * sizePerTexture + t}, texture buffer: ${
-        //       s * sizePerTexture + t
-        //     }, s: ${s}, t: ${t}, textureIndex: ${textureIndex} with colour component: ${
-        //       texture.getTextureBytes()[s * sizePerTexture * 4 + t]
-        //     } and texture length: ${texture.getTextureBytes().length} offset: ${offset}`
-        //   );
-        // }
-
         this.buffer[s * bufferSize * 4 + t + textureIndex * sizePerTexture * 4] =
           texture.getTextureBytes()[s * sizePerTexture * 4 + t];
       }
@@ -834,6 +713,9 @@ class Texture {
     if (this.pattern) this.buildTexture();
   }
 
+  /**
+   * Monta a textura com base no padrão definido no construtor
+   */
   buildTexture() {
     const { pattern, TEX_SIZE: size, texture } = this;
 
@@ -922,24 +804,39 @@ class Texture {
     }
   }
 
+  /**
+   * Setter para os bytes da textura
+   */
   setTexture(texture) {
     this.texture = texture;
   }
 
+  /**
+   * Getter para os bytes da textura
+   */
   getTextureBytes() {
     return this.texture;
   }
 
+  /**
+   * Métodos estáticos para obter texturas já pré-definidas
+   */
   static Grass() {
     const texture = new Texture(32, 32, 32, "GRASS");
     return texture;
   }
 
+  /**
+   * Métodos estáticos para obter texturas já pré-definidas
+   */
   static Rock() {
     const texture = new Texture(32, 32, 32, "ROCK");
     return texture;
   }
 
+  /**
+   * Métodos estáticos para obter texturas já pré-definidas
+   */
   static Wood() {
     const texture = new Texture(32, 32, 32, "WOOD");
     return texture;
@@ -975,19 +872,35 @@ class World {
     ];
   }
 
+  /**
+   * Getter para a função de montagem do tipo de bloco contido na posição x,y,z do volume
+   */
   getBlockTypeByIndex(x, y, z) {
     const indexBlockToPlace = this.worldVoxelMatrix[x][y][z];
     return this.blockByIndex[indexBlockToPlace];
   }
 
+  /**
+   * Getter para o tipo de bloco contido na posição x,y,z do volume
+   */
   getBlockByIndex(x, y, z) {
     return this.worldVoxelMatrixReferences[x][y][z];
   }
 
+  /**
+   * Setter para o tipo de bloco contido na posição x,y,z do volume
+   */
   setBlockByIndex(x, y, z, block) {
     this.worldVoxelMatrixReferences[x][y][z] = block;
   }
 
+  /**
+   * Retorna um novo índice (posição do novo bloco) caso o raio recebido colida com algum bloco do volume,
+   * prioriza o índice cuja colisão foi registrada mais próxima do jogador
+   * @param {Ray} ray - Raio
+   * @param {vec3} playerPos - Posição do jogador
+   * @returns {number[]}
+   */
   getNewBlockIndexByRayCollision(ray, playerPos) {
     let nearestBlockCollisionPointIndexes;
     let nearestBlockDistance = Infinity;
@@ -1005,8 +918,6 @@ class World {
                 continue;
               }
 
-              // console.log(`Face ${newIndexes}`);
-
               const distanceToBlock = length(block.pos, playerPos);
 
               if (distanceToBlock < nearestBlockDistance) {
@@ -1022,6 +933,11 @@ class World {
     if (nearestBlockCollisionPointIndexes) return nearestBlockCollisionPointIndexes;
   }
 
+  /**
+   * Verifica se há colisão do raio recebido com algum bloco no volume do mundo
+   * @param {Ray} ray - Raio
+   * @returns {number[]}
+   */
   hasCollisionWithWorld(ray) {
     for (let x = 0; x < this.worldSize; x++) {
       for (let y = 0; y < this.worldSize; y++) {
@@ -1041,6 +957,10 @@ class World {
     return false;
   }
 
+  /**
+   * Monta o chão do mundo em Z
+   * @param {number} groundLevel - Nível do chão
+   */
   buildGround(groundLevel) {
     for (let x = 0; x < this.worldVoxelMatrix.length; x++) {
       for (let y = 0; y < this.worldVoxelMatrix[x].length; y++) {
@@ -1049,6 +969,11 @@ class World {
     }
   }
 
+  /**
+   * Posiciona um bloco no mundo
+   * @param {number} blockType - Tipo do bloco
+   * @param {number[]} index - Índice
+   */
   placeBlock(blockType, index) {
     const halfWL = Math.ceil(this.worldSize / 2);
     const halfWH = Math.ceil(this.worldHeight / 2);
@@ -1063,23 +988,34 @@ class World {
       this.setBlockByIndex(x, y, z, block);
       block.setIndexInWorldVolume(x, y, z);
 
-      const [start, end] = this.blockController.diffuseTextureBuffer.getTextureMappingByIndex(block.diffuseIndex);
-
-      var vT = [vec2(start[0], start[1]), vec2(end[0], start[1]), vec2(end[0], end[1]), vec2(start[0], end[1])];
-
-      // prettier-ignore
-      var textureCordsBase = [
-        vT[0], vT[1], vT[2], 
-        vT[2], vT[3], vT[0],
-      ];
-
-      var textureCords = [].concat(...Array(6).fill(textureCordsBase));
-
-      block.setTextureMap(textureCords);
+      this.setBlockTextureMap(block);
       gObjects.push(block);
     }
   }
 
+  /**
+   * Define as coordenadas de textura de um bloco (cubo), com base em seu tipo
+   * @param {Cube} block - Bloco
+   */
+  setBlockTextureMap(block) {
+    const [start, end] = this.blockController.diffuseTextureBuffer.getTextureMappingByIndex(block.diffuseIndex);
+
+    var vT = [vec2(start[0], start[1]), vec2(end[0], start[1]), vec2(end[0], end[1]), vec2(start[0], end[1])];
+
+    // prettier-ignore
+    var textureCordsBase = [
+        vT[0], vT[1], vT[2], 
+        vT[2], vT[3], vT[0],
+      ];
+
+    var textureCords = [].concat(...Array(6).fill(textureCordsBase));
+
+    block.setTextureMap(textureCords);
+  }
+
+  /**
+   * Realiza a montagem inicial do mundo, de acordo com as posições do volume já preenchidas e válidas
+   */
   build() {
     for (let x = 0; x < this.worldVoxelMatrix.length; x++) {
       for (let y = 0; y < this.worldVoxelMatrix[x].length; y++) {
