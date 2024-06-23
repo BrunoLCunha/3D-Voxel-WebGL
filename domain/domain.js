@@ -175,7 +175,7 @@ class Cube extends GameObject {
       faceColliderRight,
       faceColliderLeft,
       faceColliderFront,
-      faceColliderBack,
+      faceColliderBack
     );
 
     super.collider = cubeCollider;
@@ -417,7 +417,6 @@ class QuadCollider {
     // this._v4 = add(this.cubePos, mult(this.sizeLength, this.vertexes[4])); // yellow
 
     this._normal = normalize(cross(this.s1, this.s2));
-    console.log(`normal ${this._normal}`);
   }
 
   get v0() {
@@ -496,7 +495,6 @@ class QuadCollider {
     // console.log(`S s1: ${this.s1} s2: ${this.s2}`);
 
     if (alpha1 >= 0 && alpha1 <= 1 && alpha2 >= 0 && alpha2 <= 1 && alpha1 + alpha2 > 0) {
-      gCubeB.pos = this.v0;
       return true;
     }
   }
@@ -819,13 +817,18 @@ class TextureBuffer {
     ctx.generateMipmap(ctx.TEXTURE_2D);
     ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.NEAREST);
     ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.NEAREST);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S, ctx.CLAMP_TO_EDGE);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T, ctx.CLAMP_TO_EDGE);
+    this.glTexture = ctxTexture;
+  }
+
+  getGlTexture() {
+    return this.glTexture;
   }
 }
 
 class Texture {
-  constructor(nRow, nCol, size, pattern) {
-    this.N_ROWS = nRow;
-    this.N_COLS = nCol;
+  constructor(size, pattern) {
     this.TEX_SIZE = size;
 
     this.texture = new Uint8Array(4 * size * size);
@@ -931,17 +934,17 @@ class Texture {
   }
 
   static Grass() {
-    const texture = new Texture(32, 32, 32, "GRASS");
+    const texture = new Texture(32, "GRASS");
     return texture;
   }
 
   static Rock() {
-    const texture = new Texture(32, 32, 32, "ROCK");
+    const texture = new Texture(32, "ROCK");
     return texture;
   }
 
   static Wood() {
-    const texture = new Texture(32, 32, 32, "WOOD");
+    const texture = new Texture(32, "WOOD");
     return texture;
   }
 }

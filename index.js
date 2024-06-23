@@ -19,10 +19,18 @@ const WORLD_HEIGHT = 10;
 const RAY_SIZE = 100;
 const G = 9.8 * 50;
 const HALF_CUBE_SIZE = 25;
+let SHADOW_MAP_SIZE = 1024;
+const FOVY = 60;
+const ASPECT_RATIO = 4 / 3;
+const NEAR = 0.1;
+const FAR = 10000;
+const SHADOW_DELTA = 0.001;
+const SHADOW_TEXTURE_UNIT = 1;
 
 var gCtx;
 var gCanvas;
 var gShader = {};
+var gShaderShadow = {};
 var gmProjection;
 var gInterface = {};
 var gPlaying = true;
@@ -50,6 +58,8 @@ var gKeyCode = {
 
 var gVertexShaderSrc;
 var gFragmentShaderSrc;
+var gVertexShaderShadowSrc;
+var gFragmentShaderShadowSrc;
 
 var gObjects = [];
 var gLastT = Date.now();
@@ -69,7 +79,7 @@ const gSphereA = new Sphere(vec3(50, -50, 20), vec3(25, 90, 90), vec3(20, 20, 50
 const gSphereB = new Sphere(vec3(-100, -100, 30), vec3(0, 0, 0), vec3(30, 30, 30), vec3(0, 20, 0), vec3(0, 0, 0), 4);
 
 const gCubeAim = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(0.5, 0.5, 0.5), vec3(0, 0, 0), vec3(0, 0, 0));
-const gCubeB = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(50, 50, 50), vec3(0, 0, 0), vec3(0, 0, 0));
+const gCubeB = new Cube(vec3(-50, -50, 50), vec3(0, 0, 0), vec3(50, 50, 50), vec3(0, 0, 0), vec3(0, 0, 0));
 
 const gCubeVertexa = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
 const gCubeVertexb = new Cube(vec3(0, 0, 0), vec3(0, 0, 0), vec3(12, 12, 12), vec3(0, 0, 0), vec3(0, 0, 0));
@@ -88,8 +98,11 @@ const gSphereYellow = new Sphere(
   2
 );
 
-const gLight = new Light(vec4(0, 0, 0, 0), Color.White, Color.White, Color.DarkGrey);
-const gCamera = new Camera(vec3(-50, -50, PLAYER_HEIGHT + HALF_CUBE_SIZE), vec3(-50, -49, PLAYER_HEIGHT + HALF_CUBE_SIZE));
+const gLight = new Light(vec4(50, 50, 50, 0), Color.White, Color.White, Color.DarkGrey);
+const gCamera = new Camera(
+  vec3(-50, -50, PLAYER_HEIGHT + HALF_CUBE_SIZE),
+  vec3(-50, -49, PLAYER_HEIGHT + HALF_CUBE_SIZE)
+);
 
 var gPlayerVerticalVelocity = 0;
 var gPlayerOnGround = false;
@@ -105,6 +118,8 @@ var gTextureConfig = {
   TEXTURE_SIZE: 32,
 };
 
+var shadowBuffPos = [];
+
 /**
  * Ponto de entrada do codigo
  *
@@ -118,6 +133,12 @@ function main() {
   if (!gCtx) alert("WebgCtx 2.0 isn't available");
   gShader.program = makeProgram(gCtx, gVertexShaderSrc, gFragmentShaderSrc);
   gCtx.useProgram(gShader.program);
+
+  SHADOW_MAP_SIZE = gCanvas.width;
+
+  gCtx.clearColor(BACKGROUND_COLOR[0], BACKGROUND_COLOR[1], BACKGROUND_COLOR[2], BACKGROUND_COLOR[3]);
+  gCtx.enable(gCtx.DEPTH_TEST);
+  gCtx.viewport(0, 0, gCanvas.width, gCanvas.height);
 
   start();
   render();
@@ -354,17 +375,87 @@ function buildShaders() {
   gShader.uView = gCtx.getUniformLocation(gShader.program, "uView");
   gShader.uPerspective = gCtx.getUniformLocation(gShader.program, "uPerspective");
   gShader.uInverseTranspose = gCtx.getUniformLocation(gShader.program, "uInverseTranspose");
+  gShader.uLightProjectionMatrix = gCtx.getUniformLocation(gShader.program, "uLightProjectionMatrix");
+  gShader.uLightViewMatrix = gCtx.getUniformLocation(gShader.program, "uLightViewMatrix");
+  gShader.uDelta = gCtx.getUniformLocation(gShader.program, "uDelta");
 
-  let fovy = 60;
-  let aspectRatio = 4 / 3;
-  let near = 0.1;
-  let far = 10000;
-
-  gCtx.perspective = perspective(fovy, aspectRatio, near, far);
+  gCtx.perspective = perspective(FOVY, ASPECT_RATIO, NEAR, FAR);
   gCtx.uniformMatrix4fv(gShader.uPerspective, false, flatten(gCtx.perspective));
 
   gShader.uLightPos = gCtx.getUniformLocation(gShader.program, "uLightPos");
   gCtx.uniform4fv(gShader.uLightPos, gLight.pos);
+
+  const lightProjectionMatrix = perspective(FOVY, ASPECT_RATIO, NEAR, FAR);
+  gCtx.uniformMatrix4fv(gShader.uLightProjectionMatrix, false, flatten(lightProjectionMatrix));
+
+  let at = add(gCamera.pos, gCamera.initialAt);
+  const lightViewMatrix = lookAt(
+    vec3(gLight.pos[0], gLight.pos[1], gLight.pos[2]),
+    at,
+    vec3(gCamera.up[0], gCamera.up[1], gCamera.up[2])
+  );
+  gCtx.uniformMatrix4fv(gShader.uLightViewMatrix, false, flatten(lightViewMatrix));
+
+  buildShadowsShaders();
+
+}
+
+function buildShadowsShaders() {
+  gShaderShadow.program = makeProgram(gCtx, gVertexShaderShadowSrc, gFragmentShaderShadowSrc);
+  gCtx.useProgram(gShaderShadow.program);
+
+  gShaderShadow.VAO = gCtx.createVertexArray();
+  gCtx.bindVertexArray(gShaderShadow.VAO);
+
+  // cria buffer contendo todas as posições dos vértices em um mesmo VAO
+  shadowBuffPos = gObjects.reduce((buf, object) => buf.concat(object.vertexes), []);
+  gShaderShadow.bufVertices = gCtx.createBuffer();
+  gCtx.bindBuffer(gCtx.ARRAY_BUFFER, gShaderShadow.bufVertices);
+  gCtx.bufferData(gCtx.ARRAY_BUFFER, flatten(shadowBuffPos), gCtx.STATIC_DRAW);
+
+  let positionLoc = gCtx.getAttribLocation(gShaderShadow.program, "aPosition");
+  gCtx.vertexAttribPointer(positionLoc, 3, gCtx.FLOAT, false, 0, 0);
+  gCtx.enableVertexAttribArray(positionLoc);
+
+  gShaderShadow.uModel = gCtx.getUniformLocation(gShaderShadow.program, "uModel");
+  gShaderShadow.uView = gCtx.getUniformLocation(gShaderShadow.program, "uView");
+  gShaderShadow.uPerspective = gCtx.getUniformLocation(gShaderShadow.program, "uPerspective");
+
+  const lightViewMatrix = lookAt(
+    vec3(gLight.pos[0], gLight.pos[1], gLight.pos[2]),
+    add(gCamera.pos, gCamera.initialAt),
+    vec3(gCamera.up[0], gCamera.up[1], gCamera.up[2])
+  );
+  const lightProjectionMatrix = perspective(FOVY, ASPECT_RATIO, NEAR, FAR);
+
+  gCtx.uniformMatrix4fv(gShaderShadow.uView, false, flatten(lightViewMatrix));
+  gCtx.uniformMatrix4fv(gShaderShadow.uPerspective, false, flatten(lightProjectionMatrix));
+
+  createFramebuffer();
+}
+
+function createFramebuffer() {
+  // create shadow texture
+  const shadowBuffer = new TextureBuffer(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, SHADOW_TEXTURE_UNIT, gCtx);
+  shadowBuffer.buildTexture();
+  gShaderShadow.texture = shadowBuffer.getGlTexture();
+
+  // create framebuffer
+  gShaderShadow.framebuffer = gCtx.createFramebuffer();
+  gCtx.bindFramebuffer(gCtx.FRAMEBUFFER, gShaderShadow.framebuffer);
+  gShaderShadow.framebuffer.width = SHADOW_MAP_SIZE;
+  gShaderShadow.framebuffer.height = SHADOW_MAP_SIZE;
+
+  gCtx.framebufferTexture2D(gCtx.FRAMEBUFFER, gCtx.COLOR_ATTACHMENT0, gCtx.TEXTURE_2D, gShaderShadow.texture, 0);
+
+  // verify creation status
+  var status = gCtx.checkFramebufferStatus(gCtx.FRAMEBUFFER);
+  if (status != gCtx.FRAMEBUFFER_COMPLETE) alert("Erro ao criar framebuffer de sombras!");
+}
+
+function includeObjectShadow(index) {
+  const obj = gObjects[index];
+  shadowBuffPos.push(obj.vertexes);
 }
 
 function makeVAOs() {
@@ -424,6 +515,7 @@ function makeVAO(i) {
   gShader.useVertexColor = gCtx.getUniformLocation(gShader.program, "useVertexColor");
   gShader.useTextureColor = gCtx.getUniformLocation(gShader.program, "useTextureColor");
   gShader.uTextureMap = gCtx.getUniformLocation(gShader.program, "uTextureMap");
+  gShader.uShadowTextureMap = gCtx.getUniformLocation(gShader.program, "uShadowTextureMap");
 
   // textura
   if (!!gObjects[i].texture) {
@@ -451,6 +543,11 @@ function render() {
   gLastT = now;
 
   gCtx.clear(gCtx.COLOR_BUFFER_BIT | gCtx.DEPTH_BUFFER_BIT);
+
+  renderShadows();
+
+  gCtx.useProgram(gShader.program);
+  // gCtx.clearColor(BACKGROUND_COLOR[0], BACKGROUND_COLOR[1], BACKGROUND_COLOR[2], BACKGROUND_COLOR[3]);
   gCtx.enable(gCtx.CULL_FACE);
   gCtx.cullFace(gCtx.BACK);
 
@@ -474,14 +571,20 @@ function render() {
 
   gCtx.view = lookAt(eye, at, up);
 
-  gCtx.clearColor(BACKGROUND_COLOR[0], BACKGROUND_COLOR[1], BACKGROUND_COLOR[2], BACKGROUND_COLOR[3]);
-  gCtx.enable(gCtx.DEPTH_TEST);
+  // const lightViewMatrix = lookAt(
+  //   vec3(gLight.pos[0], gLight.pos[1], gLight.pos[2]),
+  //   at,
+  //   vec3(gCamera.up[0], gCamera.up[1], gCamera.up[2])
+  // );
+
+  // gCtx.uniformMatrix4fv(gShader.uLightViewMatrix, false, flatten(lightViewMatrix));
 
   for (let i = 0; i < gObjects.length; i++) {
     const vao = gShader.VAO[i];
 
     if (!vao) {
-      console.warn("VAO nao encontrado para objeto: ", gObjects[i]);
+      console.warn("VAO não encontrado para objeto: ", gObjects[i]);
+      includeObjectShadow(i);
       makeVAO(i);
     }
 
@@ -519,9 +622,11 @@ function render() {
 
     gCtx.uniform1i(gShader.useVertexColor, !!gObjects[i].colors);
     gCtx.uniform1i(gShader.useTextureColor, !!gObjects[i].texture);
+    gCtx.uniform1f(gShader.uDelta, SHADOW_DELTA);
 
     if (!!gObjects[i].texture) {
       gCtx.uniform1i(gShader.uTextureMap, gObjects[i].texture.textureUnitRef);
+      gCtx.uniform1i(gShader.uShadowTextureMap, SHADOW_TEXTURE_UNIT);
     }
 
     gCtx.drawArrays(gCtx.TRIANGLES, 0, obj.vertexes.length);
@@ -532,6 +637,60 @@ function render() {
   update(false, deltaTime);
 
   window.requestAnimationFrame(render);
+}
+
+function renderShadows() {
+  gCtx.useProgram(gShaderShadow.program);
+
+  gCtx.bindFramebuffer(gCtx.FRAMEBUFFER, gShaderShadow.framebuffer);
+
+  gCtx.bindVertexArray(gShaderShadow.VAO);
+
+  let yaw = rotateX(gCamera.theta[1]);
+  let pitch = rotateZ(gCamera.theta[0]);
+
+  let forward = mult(yaw, gCamera.forward);
+  forward = mult(pitch, forward);
+
+  gCamera.currentAt = vec3(forward[0], forward[1], forward[2]);
+  let at = add(gCamera.pos, gCamera.currentAt);
+
+  const lightViewMatrix = lookAt(
+    vec3(gLight.pos[0], gLight.pos[1], gLight.pos[2]),
+    at,
+    vec3(gCamera.up[0], gCamera.up[1], gCamera.up[2])
+  );
+
+  gCtx.uniformMatrix4fv(gShaderShadow.uView, false, flatten(lightViewMatrix));
+
+  let initialIndex = 0;
+  for (let i = 0; i < gObjects.length; i++) {
+    let obj = gObjects[i];
+
+    let vTransform = obj.pos;
+    let vRotation = obj.theta;
+    let vScale = obj.escala;
+
+    let rx = rotateX(vRotation[0]);
+    let ry = rotateY(vRotation[1]);
+    let rz = rotateZ(vRotation[2]);
+
+    let modelRotation = mult(rz, mult(ry, rx));
+
+    let modelScale = scale(vScale[0], vScale[1], vScale[2]);
+
+    let modelTranslation = translate(vTransform[0], vTransform[1], vTransform[2]);
+
+    let model = mult(modelTranslation, mult(modelRotation, modelScale));
+
+    gCtx.uniformMatrix4fv(gShaderShadow.uModel, false, flatten(model));
+
+    gCtx.drawArrays(gCtx.TRIANGLES, initialIndex, obj.vertexes.length);
+    initialIndex += obj.vertexes.length;
+  }
+
+  gCtx.bindVertexArray(null);
+  gCtx.bindFramebuffer(gCtx.FRAMEBUFFER, null);
 }
 
 /**
@@ -570,7 +729,6 @@ function handleCollision(deltaTime) {
 
     const collisionCube = gWorld.hasCollisionWithWorld(new Ray(rayFrom, rayDirection, 5));
     if (collisionCube) {
-      console.log("COLIISION");
       return;
     }
 
@@ -626,6 +784,8 @@ gVertexShaderSrc = `#version 300 es
     uniform mat4 uInverseTranspose;
 
     uniform vec4 uLightPos;
+    uniform mat4 uLightProjectionMatrix;
+    uniform mat4 uLightViewMatrix;
     
     out vec3 vNormal;
     out vec4 vColor;
@@ -633,19 +793,22 @@ gVertexShaderSrc = `#version 300 es
     out vec3 vView;
     out vec2 vTextureCoord;
 
+    out vec4 vLightViewPosition;
+
     void main() {
-        vec4 nPos = vec4(aPosition, 1.0);
+        vec4 aPos = vec4(aPosition, 1.0);
         mat4 modelView = uView * uModel;
         
-        gl_Position = uPerspective * modelView * nPos;
+        gl_Position = uPerspective * modelView * aPos;
 
         vNormal = mat3(uInverseTranspose) * aNormal;
-        vec4 pos = modelView * nPos;
+        vec4 pos = modelView * aPos;
 
         vLight = (uView * uLightPos - pos).xyz;
         vView = -(pos.xyz);
         vColor = aColor;
         vTextureCoord = aTextureCoord;
+        vLightViewPosition = uLightProjectionMatrix * uLightViewMatrix * uModel * aPos;
     }
 `;
 
@@ -669,6 +832,7 @@ gFragmentShaderSrc = `#version 300 es
     in vec3 vLight;
     in vec3 vView;
     in vec2 vTextureCoord;
+    in vec4 vLightViewPosition;
 
     out vec4 outColor;
 
@@ -680,6 +844,9 @@ gFragmentShaderSrc = `#version 300 es
 
     uniform bool useVertexColor;
     uniform bool useTextureColor;
+
+    uniform float uDelta;
+    uniform sampler2D uShadowTextureMap;
 
     void main() {
       vec3 normalV = normalize(vNormal);
@@ -713,6 +880,38 @@ gFragmentShaderSrc = `#version 300 es
       outColor = diffuse + specular + uAmbient;
       outColor = outColor * textureColor;
 
+      float shadowIntensity = 0.5;
+      vec3 shadowCoord = 0.5*vLightViewPosition.xyz/vLightViewPosition.w + 0.5;
+      float depth = texture(uShadowTextureMap, shadowCoord.xy).x;
+
+      if (shadowCoord.z >= depth + uDelta) outColor = outColor * shadowIntensity;
+
       outColor.a = 1.0;
+
+      // outColor = vec4(depth, depth, depth, 1.0);
     }
+`;
+
+gVertexShaderShadowSrc = `#version 300 es
+
+      in vec3 aPosition;
+
+      uniform mat4 uModel;
+      uniform mat4 uView;
+      uniform mat4 uPerspective;
+
+      void main() {
+          gl_Position = uPerspective * uView * uModel * vec4(aPosition, 1);
+      }
+`;
+
+gFragmentShaderShadowSrc = `#version 300 es
+
+      precision highp float;
+
+      out vec4 outColor;
+
+      void main() {
+          outColor = vec4(gl_FragCoord.z, gl_FragCoord.z, gl_FragCoord.z , 1.0);
+      }
 `;
