@@ -1,14 +1,9 @@
 
 Bruno Lourenço da Cunha
 
-EP4 - Simulador de vôo
+3D Voxel world with Phong model ilumination, using only WebGL. All textures are procedurally generated and uses a single GPU TU (texture unit).
 
-Neste EP, foi realizada a criação de uma cena consistindo em objetos 3D primitivos transformados, escalados e rotacionados, 
-junto a uma câmera que também é afetada por rotação e translação.
-A cena possui os objetos de referência BOLA e CHAO, além de outros cubos e esferas.
-Optei por desenvolver o EP4 como base para o projeto final, portanto, achei adequado dedicar um arquivo .js específico (domain.js),
-contendo algumas classes que pretendo reutilizar. Cada classe ou método possui uma descrição geral e de cada parâmetro.
+How to run:
+  - Download the project as zip and extract it's content in some folder
+  - Run index.html
 
-Além do que foi especificado na descrição do EP, realizei a implementação do modelo de iluminação de Phong.
-
-É um bug conhecido a movimentação da câmera para cima além do ângulo de 304 graus. Acredito que a causa seja manter o up fixo enquanto a rotação é realizada.
